@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>multi-pitch tuner</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+  <main class="app">
+
+    <!-- HEADER -->
+    <header class="topbar sleek">
+      <div class="brand">
+        <img
+          src="assets/chord-tuner-logo.png"
+          alt="Chord Tuner"
+          class="headerlogo"
+          draggable="false"
+        />
+        <h1 class="sr-only">multi-pitch tuner</h1>
+      </div>
+
+      <div class="session-controls">
+        <div class="session-label">Session</div>
+
+        <div class="session-buttons">
+          <button id="start" class="btn session begin">Begin</button>
+          <button id="stop" class="btn session end" disabled>End</button>
+        </div>
+      </div>
+    </header>
+
+    <!-- STATUS BAR (NOT inside header) -->
+    <div class="statusbar">
+      <span class="dot" id="dot"></span>
+      <span id="status">Idle</span>
+      <span class="spacer"></span>
+    </div>
+
+    <!-- SPECTROGRAM + DETECTED PITCHES SIDE-BY-SIDE -->
+    <section class="layout">
+      <section class="card bigspec">
+        <div class="cardhead">
+          <h2>Spectrogram</h2>
+          <div class="sub">Time → (wraps). Frequency ↑ (log). Brightness = loudness</div>
+        </div>
+        <canvas id="spec"></canvas>
+      </section>
+
+      <section class="card pitches">
+        <div class="cardhead">
+          <h2>Detected pitches</h2>
+          <div class="sub">Top 3 fundamentals</div>
+        </div>
+
+        <div class="pitchlist" id="pitchlist">
+          <div class="empty">Click <b>Begin</b> and sing/play a chord.</div>
+        </div>
+
+        <details class="details">
+          <summary>Show raw readout</summary>
+          <pre id="out">—</pre>
+        </details>
+      </section>
+    </section>
+
+    <!-- Intonation practice -->
+    <section class="card practice" id="practice">
+      <div class="cardhead">
+        <h2>Intonation practice</h2>
+        <div class="sub">Pick a tonic, then select up to 4 intervals to form a chord. Sing any target.</div>
+      </div>
+
+      <div class="practice-top">
+        <div class="practice-controls">
+          <label class="wave">
+            <span>Tuning</span>
+            <select id="practiceSystem">
+              <option value="equal" selected>Equal temperament</option>
+              <option value="just">Just intonation</option>
+              <option value="pyth">Pythagorean</option>
+            </select>
+          </label>
+<label class="wave">
+  <span>Sound</span>
+  <select id="practiceWave">
+    <option value="sine" selected>Sine</option>
+    <option value="triangle">Triangle</option>
+    <option value="sawtooth">Sawtooth</option>
+    <option value="square">Square</option>
+  </select>
+</label>
+          <label class="toggle">
+            <input type="checkbox" id="practicePlayRef" checked />
+            <span>Play tonic</span>
+          </label>
+
+          <label class="toggle">
+            <input type="checkbox" id="practicePlayTarget" />
+            <span>Play chord</span>
+          </label>
+
+          <label class="vol">
+            <span>Volume</span>
+            <input id="practiceVol" type="range" min="0" max="1" step="0.01" value="0.18" />
+          </label>
+
+          <button class="btn" id="practiceStop" type="button">Stop</button>
+        </div>
+
+        <div class="practice-readout" aria-live="polite">
+          <div class="row">
+            <span class="label">Tonic</span>
+            <span id="practiceTonic">—</span>
+            <span class="spacer"></span>
+            <span class="label">Intervals</span>
+            <span id="practiceInterval">—</span>
+          </div>
+
+          <div class="row big">
+            <span id="practiceStatus" class="refstatus">Select a tonic + intervals</span>
+            <span id="practiceCents" class="refcents"></span>
+          </div>
+
+          <div class="row">
+            <span class="label">Target</span>
+            <span id="practiceTarget">—</span>
+            <span class="spacer"></span>
+            <span class="label">Detected</span>
+            <span id="practiceDetected">—</span>
+          </div>
+
+          <div class="targetlist" id="practiceTargetsList"></div>
+        </div>
+      </div>
+
+      <div class="practice-grids">
+        <div class="practice-block">
+          <div class="smallcap">Tonic (C3–C5)</div>
+          <div class="notegrid" id="practiceRefGrid" aria-label="Tonic note buttons"></div>
+        </div>
+
+        <div class="practice-block">
+          <div class="smallcap">Intervals (select up to 4)</div>
+          <div class="intervalgrid" id="practiceIntGrid" aria-label="Interval buttons"></div>
+        </div>
+      </div>
+    </section>
+
+    <footer class="footer"></footer>
+
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
