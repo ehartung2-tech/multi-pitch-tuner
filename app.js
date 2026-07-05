@@ -15,9 +15,23 @@ const CLOSE_CENTS   = 15;
 const MAX_HZ = 4000;
 const LABEL_W = 190; // piano sidebar cap
 
+// Pitch detection parameters
+const DETECT_MIN_HZ = 55;
+const DETECT_MAX_HZ = 1400;
+const CAND_STEP_CENTS = 8;
+const MIN_PICK_SEMITONES = 0.55;
+const MAX_TRACK_AGE = 8;
+
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 function centsBetween(freq, target) { return 1200 * Math.log2(freq / target); }
 function absCents(note) { return Math.abs(note?.cents ?? 999); }
+
+function percentile(values, p) {
+  if (!values || values.length === 0) return 0;
+  const sorted = Array.from(values).sort((a, b) => a - b);
+  const idx = clamp(Math.floor(sorted.length * p), 0, sorted.length - 1);
+  return sorted[idx] || 0;
+}
 
 function qualityClassFromCents(cents) {
   const a = Math.abs(cents);
@@ -77,12 +91,14 @@ function renderPitchCards(picks) {
     const cls = qualityClass(p.note);
     const pos = clamp(((cents + 50) / 100) * 100, 0, 100);
     const centsText = `${cents >= 0 ? "+" : ""}${cents.toFixed(0)}`;
+    const confidence = clamp(p.confidence ?? 0, 0, 1);
+    const confText = `${Math.round(confidence * 100)}%`;
 
     return `
       <div class="pitch ${cls}">
         <div>
           <div class="note">${p.note.name}</div>
-          <div class="meta">${p.freq.toFixed(1)} Hz</div>
+          <div class="meta">${p.freq.toFixed(1)} Hz · ${confText}</div>
         </div>
 
         <div class="meter">
@@ -99,50 +115,192 @@ function renderPitchCards(picks) {
    Polyphonic-ish pitch picking
 ------------------------------ */
 
-function harmonicScore(mag, binHz, f0, nHarm = 8, maxHz = 5000) {
-  let score = 0;
-  for (let h = 1; h <= nHarm; h++) {
-    const fh = f0 * h;
-    if (fh > maxHz) break;
-    const idx = Math.round(fh / binHz);
-    if (idx >= 0 && idx < mag.length) score += mag[idx] / h;
+function maxAroundBin(mag, center, radius) {
+  const lo = Math.max(0, center - radius);
+  const hi = Math.min(mag.length - 1, center + radius);
+  let best = 0;
+  let bestIdx = center;
+
+  for (let i = lo; i <= hi; i++) {
+    if (mag[i] > best) {
+      best = mag[i];
+      bestIdx = i;
+    }
   }
-  return score;
+
+  return { value: best, idx: bestIdx };
 }
 
-function multiPitchFromSpectrum(mag, sampleRate, fftSize, k = 3, fmin = 60, fmax = 1200) {
+function parabolicBinOffset(mag, idx) {
+  if (idx <= 0 || idx >= mag.length - 1) return 0;
+  const a = mag[idx - 1];
+  const b = mag[idx];
+  const c = mag[idx + 1];
+  const den = a - 2 * b + c;
+  if (Math.abs(den) < 1e-12) return 0;
+  return clamp(0.5 * (a - c) / den, -0.5, 0.5);
+}
+
+function conditionSpectrum(lin, sampleRate, fftSize, maxHz = MAX_HZ) {
   const binHz = sampleRate / fftSize;
+  const maxBin = Math.min(lin.length - 1, Math.floor(maxHz / binHz));
+  const conditioned = new Float32Array(lin.length);
 
-  const candN = 700;
-  const cand = new Float32Array(candN);
-  const scores = new Float32Array(candN);
+  const samples = [];
+  const step = Math.max(1, Math.floor(maxBin / 512));
+  for (let i = 1; i <= maxBin; i += step) samples.push(lin[i]);
 
-  const logMin = Math.log(fmin);
-  const logMax = Math.log(fmax);
+  const noise = Math.max(percentile(samples, 0.55), 1e-9);
+  const peak = Math.max(percentile(samples, 0.995), noise);
+  const range = Math.max(peak - noise, 1e-9);
 
-  for (let i = 0; i < candN; i++) {
-    const f0 = Math.exp(logMin + (logMax - logMin) * (i / (candN - 1)));
-    cand[i] = f0;
-    scores[i] = harmonicScore(mag, binHz, f0, 8, 5000);
+  for (let i = 1; i <= maxBin; i++) {
+    const gated = Math.max(0, lin[i] - noise * 1.35);
+    conditioned[i] = Math.log1p((gated / range) * 24);
   }
 
-  const order = [...scores.keys()].sort((a, b) => scores[b] - scores[a]);
+  // Gentle spectral whitening keeps vowels, instrument timbre, and loud
+  // upper partials from dominating the fundamental score.
+  const whitened = new Float32Array(lin.length);
+  for (let i = 1; i <= maxBin; i++) {
+    const r = Math.max(3, Math.round(i * 0.035));
+    const lo = Math.max(1, i - r);
+    const hi = Math.min(maxBin, i + r);
+    let local = 0;
+    for (let j = lo; j <= hi; j++) local += conditioned[j];
+    local /= (hi - lo + 1);
+    whitened[i] = conditioned[i] / Math.sqrt(local + 0.06);
+  }
 
-  const picked = [];
-  for (const idx of order) {
-    const f0 = cand[idx];
+  return { mag: whitened, noise, peak, binHz, maxBin };
+}
 
-    let ok = true;
-    for (const p of picked) {
-      const semitones = Math.abs(Math.log2(f0 / p) * 12);
-      if (semitones < 1.0) { ok = false; break; }
+function harmonicScore(mag, binHz, f0, maxBin, maxHz = MAX_HZ) {
+  let score = 0;
+  let weightSum = 0;
+  let evidence = 0;
+  let firstHarmonic = 0;
+  let strongest = 0;
+
+  for (let h = 1; h <= 10; h++) {
+    const fh = f0 * h;
+    if (fh > maxHz) break;
+
+    const center = Math.round(fh / binHz);
+    if (center < 1 || center > maxBin) continue;
+
+    const radius = Math.max(1, Math.round(center * 0.006));
+    const { value } = maxAroundBin(mag, center, radius);
+    const weight = 1 / Math.pow(h, 0.78);
+
+    score += value * weight;
+    weightSum += weight;
+    strongest = Math.max(strongest, value);
+    if (h === 1) firstHarmonic = value;
+    if (value > 0.16) evidence++;
+  }
+
+  if (weightSum === 0) return { score: 0, evidence: 0, firstHarmonic: 0, strongest: 0 };
+
+  const normalized = score / weightSum;
+  const presence = clamp(evidence / 4, 0, 1);
+  const fundamentalSupport = strongest > 0 ? clamp(firstHarmonic / strongest, 0, 1) : 0;
+  const missingFundamentalAllowance = firstHarmonic > 0.10 ? 1 : 0.72;
+
+  return {
+    score: normalized * (0.65 + 0.35 * presence) * (0.72 + 0.28 * fundamentalSupport) * missingFundamentalAllowance,
+    evidence,
+    firstHarmonic,
+    strongest
+  };
+}
+
+function refineCandidateFreq(mag, binHz, f0, maxBin) {
+  const center = Math.round(f0 / binHz);
+  if (center < 1 || center >= maxBin) return f0;
+  const radius = Math.max(1, Math.round(center * 0.006));
+  const { idx } = maxAroundBin(mag, center, radius);
+  const offset = parabolicBinOffset(mag, idx);
+  const refined = (idx + offset) * binHz;
+
+  if (!isFinite(refined) || refined <= 0) return f0;
+  const cents = Math.abs(centsBetween(refined, f0));
+  return cents <= 45 ? refined : f0;
+}
+
+function isLikelyOvertoneOf(freq, selected) {
+  for (const p of selected) {
+    for (let h = 2; h <= 6; h++) {
+      const cents = Math.abs(centsBetween(freq, p.freq * h));
+      if (cents < 34 && (p.confidence ?? 0) >= 0.72) return true;
+    }
+  }
+  return false;
+}
+
+function multiPitchFromSpectrum(lin, sampleRate, fftSize, k = 3, fmin = DETECT_MIN_HZ, fmax = DETECT_MAX_HZ) {
+  const { mag, binHz, maxBin } = conditionSpectrum(lin, sampleRate, fftSize, MAX_HZ);
+  const minHz = Math.max(fmin, binHz * 2);
+  const maxHz = Math.min(fmax, MAX_HZ * 0.75);
+  const steps = Math.max(1, Math.ceil(1200 * Math.log2(maxHz / minHz) / CAND_STEP_CENTS));
+  const candidates = [];
+
+  for (let i = 0; i <= steps; i++) {
+    const f0 = minHz * Math.pow(2, (i * CAND_STEP_CENTS) / 1200);
+    const base = harmonicScore(mag, binHz, f0, maxBin, MAX_HZ);
+    if (base.score <= 0) continue;
+
+    let subPenalty = 0;
+    for (const div of [2, 3, 4]) {
+      const sub = f0 / div;
+      if (sub >= minHz) {
+        subPenalty = Math.max(subPenalty, harmonicScore(mag, binHz, sub, maxBin, MAX_HZ).score);
+      }
     }
 
-    if (ok) picked.push(f0);
-    if (picked.length >= k) break;
+    const score = Math.max(0, base.score - subPenalty * 0.28);
+    candidates.push({ freq: f0, score, rawScore: base.score, evidence: base.evidence });
   }
 
-  return picked.map(f => ({ freq: f, note: freqToETNote(f) })).filter(x => x.note);
+  if (candidates.length === 0) return [];
+
+  const smoothed = candidates.map((c, idx) => {
+    const prev = candidates[idx - 1]?.score ?? c.score;
+    const next = candidates[idx + 1]?.score ?? c.score;
+    return { ...c, score: c.score * 0.62 + prev * 0.19 + next * 0.19 };
+  });
+
+  const peaks = smoothed.filter((c, idx) => {
+    const prev = smoothed[idx - 1]?.score ?? -Infinity;
+    const next = smoothed[idx + 1]?.score ?? -Infinity;
+    return c.score >= prev && c.score >= next && c.evidence >= 2;
+  });
+
+  const bestScore = Math.max(...peaks.map(c => c.score), 0);
+  const floor = Math.max(bestScore * 0.28, 0.035);
+  const order = peaks
+    .filter(c => c.score >= floor)
+    .sort((a, b) => b.score - a.score);
+
+  const selected = [];
+  for (const c of order) {
+    const freq = refineCandidateFreq(mag, binHz, c.freq, maxBin);
+    const tooClose = selected.some(p => Math.abs(Math.log2(freq / p.freq) * 12) < MIN_PICK_SEMITONES);
+    if (tooClose) continue;
+
+    if (isLikelyOvertoneOf(freq, selected)) continue;
+
+    selected.push({
+      freq,
+      score: c.score,
+      confidence: bestScore > 0 ? clamp(c.score / bestScore, 0, 1) : 0,
+      note: freqToETNote(freq)
+    });
+
+    if (selected.length >= k) break;
+  }
+
+  return selected.filter(x => x.note).sort((a, b) => a.freq - b.freq);
 }
 
 /* -----------------------------
@@ -746,6 +904,81 @@ function buildPracticeUI() {
 }
 
 /* -----------------------------
+   Pitch tracking / smoothing
+------------------------------ */
+
+let pitchTracks = [];
+let nextTrackId = 1;
+
+function resetPitchTracks() {
+  pitchTracks = [];
+  nextTrackId = 1;
+}
+
+function stabilizePicks(rawPicks, maxCount = 3) {
+  for (const track of pitchTracks) {
+    track.matched = false;
+    track.age += 1;
+    track.confidence *= 0.86;
+  }
+
+  for (const pick of rawPicks) {
+    let best = null;
+    let bestCents = Infinity;
+
+    for (const track of pitchTracks) {
+      const cents = Math.abs(centsBetween(pick.freq, track.freq));
+      if (cents < bestCents && cents <= 70) {
+        best = track;
+        bestCents = cents;
+      }
+    }
+
+    if (best) {
+      const blend = bestCents < 25 ? 0.34 : 0.52;
+      best.freq = best.freq * (1 - blend) + pick.freq * blend;
+      best.note = freqToETNote(best.freq);
+      best.score = Math.max(best.score * 0.78, pick.score || 0);
+      best.confidence = clamp(best.confidence * 0.62 + (pick.confidence ?? 0) * 0.48, 0, 1);
+      best.age = 0;
+      best.hits += 1;
+      best.matched = true;
+    } else {
+      pitchTracks.push({
+        id: nextTrackId++,
+        freq: pick.freq,
+        note: pick.note,
+        score: pick.score || 0,
+        confidence: pick.confidence ?? 0,
+        hits: 1,
+        age: 0,
+        matched: true
+      });
+    }
+  }
+
+  pitchTracks = pitchTracks
+    .filter(t => t.age <= MAX_TRACK_AGE && t.confidence >= 0.08)
+    .sort((a, b) => {
+      const aRank = a.confidence + Math.min(a.hits, 5) * 0.035 - a.age * 0.025;
+      const bRank = b.confidence + Math.min(b.hits, 5) * 0.035 - b.age * 0.025;
+      return bRank - aRank;
+    })
+    .slice(0, 8);
+
+  return pitchTracks
+    .filter(t => t.hits >= 2 || t.confidence >= 0.72)
+    .slice(0, maxCount)
+    .map(t => ({
+      freq: t.freq,
+      note: t.note,
+      score: t.score,
+      confidence: clamp(t.confidence - t.age * 0.05, 0, 1)
+    }))
+    .sort((a, b) => a.freq - b.freq);
+}
+
+/* -----------------------------
    Mic handling
 ------------------------------ */
 
@@ -771,6 +1004,8 @@ async function startMic() {
   const bins = analyser.frequencyBinCount;
   const db = new Float32Array(bins);
   const lin = new Float32Array(bins);
+  let quietFrames = 0;
+  resetPitchTracks();
 
   startBtn.disabled = true;
   stopBtn.disabled = false;
@@ -787,11 +1022,20 @@ async function startMic() {
     }
 
     let max = 0;
-    for (let i = 0; i < bins; i++) if (lin[i] > max) max = lin[i];
+    let sum = 0;
+    const usableMax = Math.min(bins, Math.floor(MAX_HZ / (micCtx.sampleRate / analyser.fftSize)));
+    for (let i = 1; i < usableMax; i++) {
+      const v = lin[i];
+      if (v > max) max = v;
+      sum += v;
+    }
+    const avg = sum / Math.max(1, usableMax - 1);
 
     let picks = [];
 
-    if (max < 1e-4) {
+    if (max < 1.8e-4 || max < avg * 5.5) {
+      quietFrames += 1;
+      if (quietFrames > 5) resetPitchTracks();
       out.textContent = "—";
       renderPitchCards([]);
 
@@ -808,10 +1052,12 @@ async function startMic() {
         })));
       }
     } else {
-      picks = multiPitchFromSpectrum(lin, micCtx.sampleRate, analyser.fftSize, 3);
+      quietFrames = 0;
+      const rawPicks = multiPitchFromSpectrum(lin, micCtx.sampleRate, analyser.fftSize, 3);
+      picks = stabilizePicks(rawPicks, 3);
 
       out.textContent = picks.length
-        ? picks.map(p => `${p.note.name}  ${p.freq.toFixed(1)} Hz  (${p.note.cents.toFixed(0)} cents)`).join("\n")
+        ? picks.map(p => `${p.note.name}  ${p.freq.toFixed(1)} Hz  (${p.note.cents.toFixed(0)} cents, ${Math.round((p.confidence ?? 0) * 100)}% confidence)`).join("\n")
         : "—";
 
       renderPitchCards(picks);
@@ -878,6 +1124,7 @@ function stopMic() {
 
   if (rafId) cancelAnimationFrame(rafId);
   rafId = null;
+  resetPitchTracks();
 
   if (analyser) analyser.disconnect();
   analyser = null;
