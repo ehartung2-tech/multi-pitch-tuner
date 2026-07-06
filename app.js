@@ -466,6 +466,21 @@ let rowToBinKey = "";
 let specScrollAccum = 0;
 let specVisualPeak = 1e-9;
 
+function resetSpectrogramImage() {
+  if (!specImg) return;
+
+  for (let i = 0; i < specImg.data.length; i += 4) {
+    specImg.data[i + 0] = 0;
+    specImg.data[i + 1] = 0;
+    specImg.data[i + 2] = 0;
+    specImg.data[i + 3] = 255;
+  }
+
+  specX = 0;
+  specScrollAccum = 0;
+  specVisualPeak = 1e-9;
+}
+
 function buildRowToBin(h, maxHz, binHz, maxBin) {
   const key = `${h}|${MIN_HZ}|${maxHz}|${binHz}|${maxBin}`;
   if (rowToBin && rowToBinKey === key) return rowToBin;
@@ -688,15 +703,7 @@ function drawSpectrogramColumn(ctx, lin, sampleRate, fftSize, canvas, picks, max
 
   if (!specImg || specImg.width !== w || specImg.height !== h) {
     specImg = ctx.createImageData(w, h);
-    for (let i = 0; i < specImg.data.length; i += 4) {
-      specImg.data[i + 0] = 0;
-      specImg.data[i + 1] = 0;
-      specImg.data[i + 2] = 0;
-      specImg.data[i + 3] = 255;
-    }
-    specX = 0;
-    specScrollAccum = 0;
-    specVisualPeak = 1e-9;
+    resetSpectrogramImage();
   }
 
   const binHz = sampleRate / fftSize;
@@ -1477,6 +1484,7 @@ function stopMic() {
 function setupSpectrogramControls() {
   const speed = document.getElementById("specSpeed");
   const label = document.getElementById("specSpeedLabel");
+  const clear = document.getElementById("clearSpec");
   if (!speed || !label) return;
 
   const apply = () => {
@@ -1485,6 +1493,18 @@ function setupSpectrogramControls() {
   };
 
   speed.addEventListener("input", apply);
+  clear?.addEventListener("click", () => {
+    resetSpectrogramImage();
+
+    const canvas = document.getElementById("spec");
+    const ctx = canvas?.getContext("2d", { alpha: false });
+    if (!canvas || !ctx || !specImg) return;
+
+    const { w, h } = sizeCanvasToDisplay(canvas, ctx);
+    const pianoW = Math.min(LABEL_W, Math.max(72, Math.floor(w * 0.08)));
+    ctx.putImageData(specImg, 0, 0);
+    drawPianoSidebar(ctx, MAX_HZ, w, h, pianoW);
+  });
   apply();
 }
 
