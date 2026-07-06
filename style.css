@@ -140,7 +140,7 @@ body{
 }
 @media (max-width: 560px){
   .headerlogo{
-    height: 10px;
+    height: 54px;
   }
 }
 /* Allow logo to overhang header slightly */
@@ -814,4 +814,240 @@ pre{
 /* press feel */
 .btn.session:active{
   transform: translateY(1px);
+}
+
+@media (max-width: 760px){
+  body{
+    overflow-x:hidden;
+  }
+
+  .app{
+    width:100%;
+    padding:12px 10px 20px;
+    gap:10px;
+  }
+
+  .topbar,
+  .topbar.sleek{
+    align-items:center;
+    flex-direction:column;
+    gap:10px;
+    padding-top:0;
+    padding-bottom:0;
+  }
+
+  .brand{
+    width:100%;
+    justify-content:center;
+    min-height:64px;
+  }
+
+  .headerlogo{
+    height:62px;
+    max-width:92vw;
+    transform:none;
+    object-fit:contain;
+  }
+
+  .session-controls{
+    width:100%;
+    align-items:stretch;
+    gap:7px;
+  }
+
+  .session-label{
+    display:none;
+  }
+
+  .session-buttons{
+    display:grid;
+    grid-template-columns:repeat(2, minmax(0, 1fr));
+    gap:8px;
+    justify-content:stretch;
+  }
+
+  .btn.session{
+    min-width:0;
+    width:100%;
+    padding:12px 8px;
+    font-size:14px;
+    letter-spacing:0.03em;
+  }
+
+  .record-tools{
+    justify-content:center;
+    min-height:22px;
+    font-size:11px;
+    flex-wrap:wrap;
+  }
+
+  .statusbar{
+    padding:8px 10px;
+    border-radius:12px;
+  }
+
+  .layout{
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+    width:100%;
+  }
+
+  .card{
+    border-radius:14px;
+    padding:10px;
+  }
+
+  .cardhead{
+    align-items:flex-start;
+    flex-direction:column;
+    gap:8px;
+    margin-bottom:8px;
+  }
+
+  .cardhead h2{
+    font-size:12px;
+  }
+
+  .spec-tools{
+    width:100%;
+    display:grid;
+    grid-template-columns:1fr auto;
+    align-items:center;
+    gap:8px;
+  }
+
+  .speed-control{
+    min-width:0;
+  }
+
+  .speed-control input{
+    width:100%;
+    min-width:80px;
+  }
+
+  .spec-tools .sub{
+    grid-column:1 / -1;
+  }
+
+  .bigspec canvas{
+    height:52vh;
+    min-height:390px;
+    max-height:620px;
+    border-radius:12px;
+  }
+
+  .pitch{
+    grid-template-columns:74px 1fr 54px;
+    gap:8px;
+    padding:9px 10px;
+    border-radius:12px;
+  }
+
+  .pitches{
+    width:100%;
+    align-self:stretch;
+  }
+
+  .note{
+    font-size:20px;
+  }
+
+  .practice{
+    margin-top:0;
+  }
+
+  .practice-top{
+    flex-direction:column;
+    gap:10px;
+  }
+
+  .practice-controls,
+  .practice-readout{
+    flex:1 1 auto;
+    width:100%;
+    border-radius:12px;
+  }
+
+  .practice-controls{
+    display:grid;
+    grid-template-columns:repeat(2, minmax(0, 1fr));
+    align-items:center;
+    gap:8px;
+  }
+
+  .wave,
+  .vol,
+  .toggle{
+    min-width:0;
+  }
+
+  .wave{
+    flex-direction:column;
+    align-items:stretch;
+    gap:5px;
+  }
+
+  .wave select{
+    width:100%;
+  }
+
+  .vol{
+    grid-column:1 / -1;
+  }
+
+  .vol input[type="range"]{
+    width:100%;
+  }
+
+  #practiceStop{
+    width:100%;
+  }
+
+  .practice-readout .row{
+    flex-wrap:wrap;
+    gap:7px;
+  }
+
+  .refstatus{
+    font-size:16px;
+  }
+
+  .practice-grids{
+    grid-template-columns:1fr;
+    gap:10px;
+  }
+
+  .practice-block{
+    border-radius:12px;
+  }
+
+  .notegrid{
+    grid-template-columns:repeat(4, 1fr);
+  }
+
+  .intervalgrid{
+    grid-template-columns:repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 380px){
+  .headerlogo{
+    height:52px;
+    max-width:96vw;
+  }
+
+  .btn.session{
+    font-size:13px;
+    padding:11px 6px;
+  }
+
+  .bigspec canvas{
+    min-height:360px;
+  }
+
+  .notegrid,
+  .intervalgrid{
+    grid-template-columns:repeat(3, 1fr);
+  }
 }
