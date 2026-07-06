@@ -642,6 +642,49 @@ pre{
 .targetrow .tdet{ opacity: .70; font-size: 12px; margin-top: 4px; }
 .targetrow .tcents{ font-variant-numeric: tabular-nums; min-width: 64px; text-align:right; }
 
+.target-feedback{
+  flex:0 0 170px;
+  display:flex;
+  align-items:center;
+  gap:10px;
+}
+
+.target-meter{
+  position:relative;
+  flex:1 1 auto;
+  height:12px;
+  border-radius:999px;
+  background:rgba(255,255,255,0.08);
+  border:1px solid rgba(255,255,255,0.12);
+  overflow:hidden;
+}
+
+.target-meter::before{
+  content:"";
+  position:absolute;
+  left:50%;
+  top:0;
+  width:2px;
+  height:100%;
+  background:rgba(255,255,255,0.34);
+}
+
+.target-dot{
+  position:absolute;
+  top:-1px;
+  width:14px;
+  height:14px;
+  border-radius:999px;
+  background:rgba(255,255,255,0.72);
+  box-shadow:0 0 14px rgba(255,255,255,0.22);
+  transition:left .12s ease;
+}
+
+.target-dot.good{ background:var(--good); box-shadow:0 0 16px rgba(90,230,170,0.42); }
+.target-dot.close{ background:var(--close); box-shadow:0 0 16px rgba(245,225,90,0.35); }
+.target-dot.bad{ background:var(--bad); box-shadow:0 0 16px rgba(255,110,110,0.35); }
+.target-dot.idle{ opacity:0.35; }
+
 .targetrow.good{
   background: linear-gradient(180deg, rgba(90,230,170,0.22), rgba(10,12,18,0.25));
   border-color: rgba(90,230,170,0.45);
@@ -1007,6 +1050,16 @@ pre{
   .practice-readout .row{
     flex-wrap:wrap;
     gap:7px;
+  }
+
+  .targetrow{
+    flex-direction:column;
+    align-items:stretch;
+  }
+
+  .target-feedback{
+    flex:1 1 auto;
+    width:100%;
   }
 
   .refstatus{

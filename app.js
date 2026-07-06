@@ -926,11 +926,14 @@ function renderPracticeTargetsList(rows) {
   }
 
   box.innerHTML = rows.map(r => {
+    const hasCents = r.cents != null && isFinite(r.cents);
     const centsText = (r.cents == null || !isFinite(r.cents))
       ? "—"
       : `${r.cents >= 0 ? "+" : ""}${r.cents.toFixed(0)}c`;
 
     const cls = r.cls || "";
+    const pos = hasCents ? clamp(((r.cents + 50) / 100) * 100, 0, 100) : 50;
+    const meterCls = hasCents ? cls : "idle";
 
     return `
       <div class="targetrow ${cls}">
@@ -939,7 +942,12 @@ function renderPracticeTargetsList(rows) {
           <span class="tmeta">(${r.note} · ${r.freq.toFixed(1)} Hz)</span>
           <div class="tdet">Detected: ${r.detectedText ?? "—"}</div>
         </div>
-        <div class="tcents">${centsText}</div>
+        <div class="target-feedback">
+          <div class="target-meter ${meterCls}" aria-label="Pitch precision meter">
+            <div class="target-dot ${meterCls}" style="left: calc(${pos}% - 7px)"></div>
+          </div>
+          <div class="tcents">${centsText}</div>
+        </div>
       </div>
     `;
   }).join("");
