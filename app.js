@@ -20,11 +20,12 @@ const IN_TUNE_CENTS = 5;
 const CLOSE_CENTS   = 15;
 
 // Spectrogram parameters
-const MAX_HZ = 4000;
+const MAX_HZ = 6500;
 const LABEL_W = 190; // piano sidebar cap
 let spectrogramSpeed = 0.5;
 
 // Pitch detection parameters
+const PITCH_ANALYSIS_MAX_HZ = 4000;
 const DETECT_MIN_HZ = 55;
 const DETECT_MAX_HZ = 1400;
 const CAND_STEP_CENTS = 8;
@@ -371,22 +372,22 @@ function isLikelyOvertoneOf(freq, selected) {
 }
 
 function multiPitchFromSpectrum(lin, sampleRate, fftSize, k = 3, fmin = DETECT_MIN_HZ, fmax = DETECT_MAX_HZ) {
-  const { mag, binHz, maxBin } = conditionSpectrum(lin, sampleRate, fftSize, MAX_HZ);
+  const { mag, binHz, maxBin } = conditionSpectrum(lin, sampleRate, fftSize, PITCH_ANALYSIS_MAX_HZ);
   const minHz = Math.max(fmin, binHz * 2);
-  const maxHz = Math.min(fmax, MAX_HZ * 0.75);
+  const maxHz = Math.min(fmax, PITCH_ANALYSIS_MAX_HZ * 0.75);
   const steps = Math.max(1, Math.ceil(1200 * Math.log2(maxHz / minHz) / CAND_STEP_CENTS));
   const candidates = [];
 
   for (let i = 0; i <= steps; i++) {
     const f0 = minHz * Math.pow(2, (i * CAND_STEP_CENTS) / 1200);
-    const base = harmonicScore(mag, binHz, f0, maxBin, MAX_HZ);
+    const base = harmonicScore(mag, binHz, f0, maxBin, PITCH_ANALYSIS_MAX_HZ);
     if (base.score <= 0) continue;
 
     let subPenalty = 0;
     for (const div of [2, 3, 4]) {
       const sub = f0 / div;
       if (sub >= minHz) {
-        subPenalty = Math.max(subPenalty, harmonicScore(mag, binHz, sub, maxBin, MAX_HZ).score);
+        subPenalty = Math.max(subPenalty, harmonicScore(mag, binHz, sub, maxBin, PITCH_ANALYSIS_MAX_HZ).score);
       }
     }
 
@@ -1338,7 +1339,7 @@ async function startMic() {
       lin[i] = (v === -Infinity) ? 0 : Math.pow(10, v / 20);
     }
 
-    const energy = analyzeMicEnergy(lin, micCtx.sampleRate, analyser.fftSize, MAX_HZ);
+    const energy = analyzeMicEnergy(lin, micCtx.sampleRate, analyser.fftSize, PITCH_ANALYSIS_MAX_HZ);
 
     let picks = [];
 
