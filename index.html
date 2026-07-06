@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>multi-pitch tuner</title>
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style.css?v=20260706-recording" />
 </head>
 
 <body>
@@ -28,6 +28,13 @@
         <div class="session-buttons">
           <button id="start" class="btn session begin">Begin</button>
           <button id="stop" class="btn session end" disabled>End</button>
+          <button id="record" class="btn session record" disabled>Record</button>
+          <button id="stopRecord" class="btn session stoprecord" disabled>Stop Rec</button>
+        </div>
+
+        <div class="record-tools">
+          <span id="recordStatus" class="record-status">Recording off</span>
+          <a id="downloadRecording" class="record-download" href="#" download hidden>Download</a>
         </div>
       </div>
     </header>
@@ -153,6 +160,6 @@
 
   </main>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=20260706-recording"></script>
 </body>
 </html>

@@ -3,6 +3,14 @@ let analyser = null;
 let stream = null;
 let rafId = null;
 
+let mediaRecorder = null;
+let recordingChunks = [];
+let recordingStartedAt = 0;
+let recordingTimerId = null;
+let recordingMime = "";
+let recordingExt = "webm";
+let recordingUrl = null;
+
 // --- Notes / helpers ---
 const NOTE_NAMES = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
 const A4 = 440;
@@ -22,6 +30,14 @@ const CAND_STEP_CENTS = 8;
 const MIN_PICK_SEMITONES = 0.55;
 const MAX_TRACK_AGE = 8;
 
+const RECORDING_TYPES = [
+  { mime: "video/mp4;codecs=h264,aac", ext: "mp4", label: "MP4" },
+  { mime: "video/mp4", ext: "mp4", label: "MP4" },
+  { mime: "video/webm;codecs=vp9,opus", ext: "webm", label: "WebM" },
+  { mime: "video/webm;codecs=vp8,opus", ext: "webm", label: "WebM" },
+  { mime: "video/webm", ext: "webm", label: "WebM" }
+];
+
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 function centsBetween(freq, target) { return 1200 * Math.log2(freq / target); }
 function absCents(note) { return Math.abs(note?.cents ?? 999); }
@@ -31,6 +47,89 @@ function percentile(values, p) {
   const sorted = Array.from(values).sort((a, b) => a - b);
   const idx = clamp(Math.floor(sorted.length * p), 0, sorted.length - 1);
   return sorted[idx] || 0;
+}
+
+function isProbablySafari() {
+  const ua = navigator.userAgent;
+  return /^((?!chrome|android|crios|fxios|edgios).)*safari/i.test(ua);
+}
+
+function formatClock(ms) {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const m = String(Math.floor(total / 60)).padStart(2, "0");
+  const s = String(total % 60).padStart(2, "0");
+  return `${m}:${s}`;
+}
+
+function chooseRecordingType() {
+  const types = getSupportedRecordingTypes();
+  return types[0] || null;
+}
+
+function getSupportedRecordingTypes() {
+  if (!window.MediaRecorder) return [];
+  return RECORDING_TYPES.filter(type => !type.mime || MediaRecorder.isTypeSupported(type.mime));
+}
+
+function setRecordStatus(text, cls = "") {
+  const el = document.getElementById("recordStatus");
+  if (!el) return;
+  el.textContent = text;
+  el.className = `record-status ${cls}`.trim();
+}
+
+function setDownloadRecording(blob, ext) {
+  const link = document.getElementById("downloadRecording");
+  if (!link) return;
+
+  if (recordingUrl) URL.revokeObjectURL(recordingUrl);
+  recordingUrl = URL.createObjectURL(blob);
+
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  const mb = blob.size / (1024 * 1024);
+  link.href = recordingUrl;
+  link.download = `chordtuner-session-${stamp}.${ext}`;
+  link.textContent = `Download ${ext.toUpperCase()} (${mb.toFixed(1)} MB)`;
+  link.hidden = false;
+}
+
+function resetRecordingDownload() {
+  const link = document.getElementById("downloadRecording");
+  if (recordingUrl) URL.revokeObjectURL(recordingUrl);
+  recordingUrl = null;
+  if (link) {
+    link.href = "#";
+    link.hidden = true;
+    link.textContent = "Download";
+  }
+}
+
+function updateRecordingButtons() {
+  const recordBtn = document.getElementById("record");
+  const stopRecordBtn = document.getElementById("stopRecord");
+  const supported = !!chooseRecordingType();
+  const hasSession = !!stream;
+  const isRecording = mediaRecorder && mediaRecorder.state === "recording";
+
+  if (recordBtn) recordBtn.disabled = !hasSession || !supported || isRecording;
+  if (stopRecordBtn) stopRecordBtn.disabled = !isRecording;
+
+  if (!supported) setRecordStatus("Recording unsupported", "warn");
+  else if (!hasSession && !isRecording) setRecordStatus("Recording off");
+}
+
+function startRecordingTimer(label) {
+  clearInterval(recordingTimerId);
+  recordingStartedAt = Date.now();
+  setRecordStatus(`Recording ${formatClock(0)} · ${label}`, "live");
+  recordingTimerId = setInterval(() => {
+    setRecordStatus(`Recording ${formatClock(Date.now() - recordingStartedAt)} · ${label}`, "live");
+  }, 500);
+}
+
+function stopRecordingTimer() {
+  clearInterval(recordingTimerId);
+  recordingTimerId = null;
 }
 
 function qualityClassFromCents(cents) {
@@ -979,6 +1078,127 @@ function stabilizePicks(rawPicks, maxCount = 3) {
 }
 
 /* -----------------------------
+   Session recording
+------------------------------ */
+
+function createRecordingStream() {
+  const canvas = document.getElementById("spec");
+  if (!canvas || !stream) return null;
+
+  const canvasStream = canvas.captureStream ? canvas.captureStream(24) : null;
+  if (!canvasStream) return null;
+
+  const mixed = new MediaStream();
+  for (const track of canvasStream.getVideoTracks()) mixed.addTrack(track);
+  for (const track of stream.getAudioTracks()) mixed.addTrack(track);
+  return mixed;
+}
+
+function recordingBitrateFor(type) {
+  const isMp4 = type?.ext === "mp4";
+  return {
+    videoBitsPerSecond: isMp4 ? 900_000 : 700_000,
+    audioBitsPerSecond: 96_000
+  };
+}
+
+function startSessionRecording() {
+  const status = document.getElementById("status");
+  const supportedTypes = getSupportedRecordingTypes() || [];
+  let type = supportedTypes[0] || null;
+
+  if (!type) {
+    setRecordStatus("Recording is not supported in this browser", "warn");
+    return;
+  }
+
+  if (!stream) {
+    setRecordStatus("Begin a session before recording", "warn");
+    return;
+  }
+
+  if (isProbablySafari()) {
+    const ok = window.confirm(
+      "Session recording works best in Chrome, Edge, or Firefox. Safari recording support can vary, especially for downloaded video files. Try recording anyway?"
+    );
+    if (!ok) return;
+  }
+
+  const capture = createRecordingStream();
+  if (!capture) {
+    setRecordStatus("Recording needs canvas capture support", "warn");
+    return;
+  }
+
+  resetRecordingDownload();
+  recordingChunks = [];
+  recordingMime = type.mime;
+  recordingExt = type.ext;
+
+  let lastErr = null;
+  for (const candidate of supportedTypes) {
+    try {
+      mediaRecorder = new MediaRecorder(capture, {
+        mimeType: candidate.mime,
+        ...recordingBitrateFor(candidate)
+      });
+      type = candidate;
+      break;
+    } catch (err) {
+      lastErr = err;
+      mediaRecorder = null;
+    }
+  }
+
+  if (!mediaRecorder) {
+    setRecordStatus(`Recording error: ${lastErr?.message || "unsupported format"}`, "warn");
+    capture.getTracks().forEach(t => t.stop());
+    updateRecordingButtons();
+    return;
+  }
+
+  mediaRecorder.addEventListener("dataavailable", (event) => {
+    if (event.data && event.data.size > 0) recordingChunks.push(event.data);
+  });
+
+  mediaRecorder.addEventListener("stop", () => {
+    stopRecordingTimer();
+    capture.getTracks().forEach(t => t.stop());
+
+    const blob = new Blob(recordingChunks, { type: recordingMime || type.mime });
+    recordingChunks = [];
+    mediaRecorder = null;
+
+    if (blob.size > 0) {
+      setDownloadRecording(blob, recordingExt);
+      setRecordStatus(`Recording ready · ${type.label}`, "ready");
+    } else {
+      setRecordStatus("Recording ended with no data", "warn");
+    }
+
+    updateRecordingButtons();
+  });
+
+  mediaRecorder.addEventListener("error", (event) => {
+    stopRecordingTimer();
+    setRecordStatus(`Recording error: ${event.error?.message || "unknown"}`, "warn");
+    updateRecordingButtons();
+  });
+
+  mediaRecorder.start(1000);
+  startRecordingTimer(type.label);
+  if (status) status.textContent = "Listening + recording…";
+  updateRecordingButtons();
+}
+
+function stopSessionRecording() {
+  if (!mediaRecorder || mediaRecorder.state === "inactive") return;
+  mediaRecorder.stop();
+  setRecordStatus("Preparing recording…", "ready");
+  updateRecordingButtons();
+}
+
+/* -----------------------------
    Mic handling
 ------------------------------ */
 
@@ -1009,9 +1229,11 @@ async function startMic() {
 
   startBtn.disabled = true;
   stopBtn.disabled = false;
+  resetRecordingDownload();
 
   status.textContent = "Listening…";
   document.getElementById("dot")?.classList.add("live");
+  updateRecordingButtons();
 
   function loop() {
     analyser.getFloatFrequencyData(db);
@@ -1126,16 +1348,24 @@ function stopMic() {
   rafId = null;
   resetPitchTracks();
 
+  const wasRecording = mediaRecorder && mediaRecorder.state !== "inactive";
+  if (wasRecording) stopSessionRecording();
+
   if (analyser) analyser.disconnect();
   analyser = null;
 
   if (micCtx) micCtx.close();
   micCtx = null;
 
-  if (stream) {
+  const stopInputStream = () => {
+    if (!stream) return;
     stream.getTracks().forEach(t => t.stop());
     stream = null;
-  }
+    updateRecordingButtons();
+  };
+
+  if (wasRecording) setTimeout(stopInputStream, 800);
+  else stopInputStream();
 
   out.textContent = "—";
   status.textContent = "Idle";
@@ -1144,12 +1374,14 @@ function stopMic() {
 
   startBtn.disabled = false;
   stopBtn.disabled = true;
+  if (!wasRecording) updateRecordingButtons();
 }
 
 // wire up
 window.addEventListener("DOMContentLoaded", () => {
   renderPitchCards([]);
   buildPracticeUI();
+  updateRecordingButtons();
 
   document.getElementById("start")?.addEventListener("click", () => {
     startMic().catch(err => {
@@ -1160,4 +1392,6 @@ window.addEventListener("DOMContentLoaded", () => {
   });
 
   document.getElementById("stop")?.addEventListener("click", () => stopMic());
+  document.getElementById("record")?.addEventListener("click", () => startSessionRecording());
+  document.getElementById("stopRecord")?.addEventListener("click", () => stopSessionRecording());
 });

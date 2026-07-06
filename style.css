@@ -662,6 +662,8 @@ pre{
 .session-buttons{
   display:flex;
   gap:12px;
+  flex-wrap:wrap;
+  justify-content:flex-end;
 }
 
 /* base session button */
@@ -705,6 +707,67 @@ pre{
 
 .btn.session.end:hover{
   background: rgba(255,255,255,0.10);
+}
+
+.btn.session.record{
+  background: rgba(120,170,255,0.16);
+  border:1px solid rgba(120,170,255,0.40);
+  color: rgba(255,255,255,0.94);
+}
+
+.btn.session.record:hover{
+  background: rgba(120,170,255,0.24);
+}
+
+.btn.session.stoprecord{
+  background: rgba(255,110,110,0.18);
+  border:1px solid rgba(255,110,110,0.42);
+  color: rgba(255,255,255,0.94);
+}
+
+.btn.session.stoprecord:hover{
+  background: rgba(255,110,110,0.26);
+}
+
+.record-tools{
+  min-height: 28px;
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:10px;
+  color:var(--muted);
+  font-size:12px;
+}
+
+.record-status{
+  font-variant-numeric: tabular-nums;
+  color:var(--muted);
+}
+
+.record-status.live{
+  color:var(--bad);
+}
+
+.record-status.ready{
+  color:var(--good);
+}
+
+.record-status.warn{
+  color:var(--close);
+}
+
+.record-download{
+  color:var(--text);
+  text-decoration:none;
+  border:1px solid rgba(90,230,170,0.35);
+  background:rgba(90,230,170,0.14);
+  border-radius:999px;
+  padding:5px 10px;
+  white-space:nowrap;
+}
+
+.record-download:hover{
+  background:rgba(90,230,170,0.22);
 }
 
 /* disabled state */
