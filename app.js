@@ -30,6 +30,9 @@ const DETECT_MAX_HZ = 1400;
 const CAND_STEP_CENTS = 8;
 const MIN_PICK_SEMITONES = 0.55;
 const MAX_TRACK_AGE = 8;
+const RUMBLE_HZ = 85;
+const VISUAL_FLOOR_MULT = 2.15;
+const VISUAL_IDLE_FLOOR_MULT = 4.8;
 
 const RECORDING_TYPES = [
   { mime: "video/mp4;codecs=h264,aac", ext: "mp4", label: "MP4" },
@@ -273,6 +276,35 @@ function conditionSpectrum(lin, sampleRate, fftSize, maxHz = MAX_HZ) {
   }
 
   return { mag: whitened, noise, peak, binHz, maxBin };
+}
+
+function analyzeMicEnergy(lin, sampleRate, fftSize, maxHz = MAX_HZ) {
+  const binHz = sampleRate / fftSize;
+  const usableMax = Math.min(lin.length, Math.floor(maxHz / binHz));
+  const rumbleBin = Math.min(usableMax, Math.max(1, Math.floor(RUMBLE_HZ / binHz)));
+  let max = 0;
+  let musicalMax = 0;
+  let sum = 0;
+  let musicalSum = 0;
+  let musicalCount = 0;
+
+  for (let i = 1; i < usableMax; i++) {
+    const v = lin[i];
+    if (v > max) max = v;
+    sum += v;
+
+    if (i >= rumbleBin) {
+      if (v > musicalMax) musicalMax = v;
+      musicalSum += v;
+      musicalCount += 1;
+    }
+  }
+
+  const avg = sum / Math.max(1, usableMax - 1);
+  const musicalAvg = musicalSum / Math.max(1, musicalCount);
+  const isQuiet = musicalMax < 1.8e-4 || musicalMax < musicalAvg * 5.5 || musicalMax < max * 0.22;
+
+  return { max, avg, musicalMax, musicalAvg, isQuiet };
 }
 
 function harmonicScore(mag, binHz, f0, maxBin, maxHz = MAX_HZ) {
@@ -648,7 +680,7 @@ function drawPitchDots(ctx, picks, x, maxHz, h, lin, sampleRate, fftSize) {
   }
 }
 
-function drawSpectrogramColumn(ctx, lin, sampleRate, fftSize, canvas, picks, maxHz = MAX_HZ) {
+function drawSpectrogramColumn(ctx, lin, sampleRate, fftSize, canvas, picks, maxHz = MAX_HZ, options = {}) {
   const { w, h } = sizeCanvasToDisplay(canvas, ctx);
 
   const pianoW = Math.min(LABEL_W, Math.max(120, Math.floor(w * 0.16)));
@@ -678,10 +710,13 @@ function drawSpectrogramColumn(ctx, lin, sampleRate, fftSize, canvas, picks, max
   const samples = [];
   for (let i = 0; i < maxBin; i += step) samples.push(lin[i]);
   samples.sort((a,b) => a - b);
-  const p96 = samples[Math.floor(samples.length * 0.96)] || 1e-9;
-  const p995 = samples[Math.floor(samples.length * 0.995)] || p96 || 1e-9;
-  const targetPeak = Math.max(p995, p96 * 2.4, 1e-9);
-  specVisualPeak = Math.max(targetPeak, specVisualPeak * 0.94);
+  const noise = samples[Math.floor(samples.length * 0.58)] || 1e-9;
+  const p96 = samples[Math.floor(samples.length * 0.96)] || noise;
+  const p995 = samples[Math.floor(samples.length * 0.995)] || p96 || noise;
+  const isQuiet = !!options.quiet || p995 < noise * 5.2;
+  const floor = noise * (isQuiet ? VISUAL_IDLE_FLOOR_MULT : VISUAL_FLOOR_MULT);
+  const targetPeak = Math.max(p995 - floor, (p96 - floor) * 2.4, 1e-9);
+  specVisualPeak = Math.max(targetPeak, specVisualPeak * (isQuiet ? 0.88 : 0.94));
   const normDen = Math.max(specVisualPeak, 1e-9);
 
   specScrollAccum += spectrogramSpeed;
@@ -700,9 +735,12 @@ function drawSpectrogramColumn(ctx, lin, sampleRate, fftSize, canvas, picks, max
       const bin = map[y];
       const prev = specImg.data[(y * w + x) * 4 + 2] / 255;
       const neighbor = bin > 0 ? (lin[bin - 1] + lin[bin] + (lin[bin + 1] || lin[bin])) / 3 : lin[bin];
-      const norm = neighbor / normDen;
+      const freq = bin * binHz;
+      const rumbleFade = clamp((freq - 45) / (RUMBLE_HZ * 1.7 - 45), 0.08, 1);
+      const aboveFloor = Math.max(0, neighbor - floor);
+      const norm = (aboveFloor * rumbleFade) / normDen;
       const clipped = clamp(norm, 0, 1);
-      const boosted = Math.pow(clipped, 0.38);
+      const boosted = Math.pow(clipped, isQuiet ? 0.62 : 0.42) * (isQuiet ? 0.28 : 1);
       const mixed = Math.max(boosted, prev * 0.08);
       const { r, g, b } = colorForSpectrogram(mixed);
 
@@ -1300,19 +1338,11 @@ async function startMic() {
       lin[i] = (v === -Infinity) ? 0 : Math.pow(10, v / 20);
     }
 
-    let max = 0;
-    let sum = 0;
-    const usableMax = Math.min(bins, Math.floor(MAX_HZ / (micCtx.sampleRate / analyser.fftSize)));
-    for (let i = 1; i < usableMax; i++) {
-      const v = lin[i];
-      if (v > max) max = v;
-      sum += v;
-    }
-    const avg = sum / Math.max(1, usableMax - 1);
+    const energy = analyzeMicEnergy(lin, micCtx.sampleRate, analyser.fftSize, MAX_HZ);
 
     let picks = [];
 
-    if (max < 1.8e-4 || max < avg * 5.5) {
+    if (energy.isQuiet) {
       quietFrames += 1;
       if (quietFrames > 5) resetPitchTracks();
       out.textContent = "—";
@@ -1388,7 +1418,9 @@ async function startMic() {
       }
     }
 
-    drawSpectrogramColumn(ctx, lin, micCtx.sampleRate, analyser.fftSize, canvas, picks, MAX_HZ);
+    drawSpectrogramColumn(ctx, lin, micCtx.sampleRate, analyser.fftSize, canvas, picks, MAX_HZ, {
+      quiet: quietFrames > 2
+    });
     rafId = requestAnimationFrame(loop);
   }
 
