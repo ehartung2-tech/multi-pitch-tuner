@@ -465,6 +465,7 @@ let rowToBin = null;
 let rowToBinKey = "";
 let specScrollAccum = 0;
 let specVisualPeak = 1e-9;
+let specPrevVisualProfile = null;
 
 function resetSpectrogramImage() {
   if (!specImg) return;
@@ -479,6 +480,7 @@ function resetSpectrogramImage() {
   specX = 0;
   specScrollAccum = 0;
   specVisualPeak = 1e-9;
+  specPrevVisualProfile = null;
 }
 
 function buildRowToBin(h, maxHz, binHz, maxBin) {
@@ -714,6 +716,9 @@ function drawSpectrogramColumn(ctx, lin, sampleRate, fftSize, canvas, picks, max
   const binHz = sampleRate / fftSize;
   const maxBin = Math.min(lin.length, Math.floor(maxHz / binHz));
   const map = buildRowToBin(h, maxHz, binHz, maxBin);
+  if (!specPrevVisualProfile || specPrevVisualProfile.length !== h) {
+    specPrevVisualProfile = new Float32Array(h);
+  }
 
   // percentile normalization
   const sampleN = 256;
@@ -761,8 +766,14 @@ function drawSpectrogramColumn(ctx, lin, sampleRate, fftSize, canvas, picks, max
       const norm = (breathAwareSignal * rumbleFade) / normDen;
       const clipped = clamp(norm, 0, 1);
       const boosted = Math.pow(clipped, isQuiet ? 0.74 : 0.48) * (isQuiet ? 0.38 : 0.92);
+      const onset = isQuiet ? 0 : clamp((boosted - specPrevVisualProfile[y] * 1.04) * 3.4, 0, 1);
       const mixed = Math.max(boosted, prev * 0.10);
-      const { r, g, b } = colorForSpectrogram(mixed);
+      const base = colorForSpectrogram(mixed);
+      const glow = onset * onset * 0.58;
+      const r = Math.round(base.r + (255 - base.r) * glow);
+      const g = Math.round(base.g + (240 - base.g) * glow);
+      const b = Math.round(base.b + (145 - base.b) * glow);
+      specPrevVisualProfile[y] = boosted * 0.82 + specPrevVisualProfile[y] * 0.18;
 
       const idx = (y * w + x) * 4;
       specImg.data[idx + 0] = r;
@@ -1347,7 +1358,7 @@ async function startMic() {
 
   analyser = micCtx.createAnalyser();
   analyser.fftSize = 8192;
-  analyser.smoothingTimeConstant = 0.48;
+  analyser.smoothingTimeConstant = 0.40;
   src.connect(analyser);
 
   const bins = analyser.frequencyBinCount;
