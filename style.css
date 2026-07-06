@@ -1031,6 +1031,11 @@ pre{
     align-self:stretch;
   }
 
+  .pitchlist,
+  #practiceTargetsList{
+    flex-direction:column-reverse;
+  }
+
   .note{
     font-size:20px;
   }
