@@ -1557,8 +1557,8 @@ function setupSpectrogramCursor() {
     const labelY = clamp(y - 18, 8, rect.height - 38);
 
     cursor.hidden = false;
-    cursor.style.left = `${rect.left + window.scrollX}px`;
-    cursor.style.top = `${rect.top + window.scrollY}px`;
+    cursor.style.left = `${rect.left}px`;
+    cursor.style.top = `${rect.top}px`;
     cursor.style.width = `${rect.width}px`;
     cursor.style.height = `${rect.height}px`;
     cursor.style.setProperty("--cursor-y", `${y}px`);
