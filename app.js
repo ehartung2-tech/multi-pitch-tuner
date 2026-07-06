@@ -20,8 +20,9 @@ const IN_TUNE_CENTS = 5;
 const CLOSE_CENTS   = 15;
 
 // Spectrogram parameters
-const MAX_HZ = 6500;
-const LABEL_W = 190; // piano sidebar cap
+const MAX_HZ = 10000;
+const MIN_HZ = 32.703; // C1; keeps the singer-focused view from wasting space on sub-rumble
+const LABEL_W = 96; // piano sidebar cap
 let spectrogramSpeed = 0.5;
 
 // Pitch detection parameters
@@ -466,15 +467,14 @@ let specScrollAccum = 0;
 let specVisualPeak = 1e-9;
 
 function buildRowToBin(h, maxHz, binHz, maxBin) {
-  const key = `${h}|${maxHz}|${binHz}|${maxBin}`;
+  const key = `${h}|${MIN_HZ}|${maxHz}|${binHz}|${maxBin}`;
   if (rowToBin && rowToBinKey === key) return rowToBin;
 
-  const f0 = 20;
   const arr = new Int32Array(h);
 
   for (let y = 0; y < h; y++) {
     const t = 1 - (y / (h - 1));
-    const freq = f0 * Math.pow(maxHz / f0, t);
+    const freq = MIN_HZ * Math.pow(maxHz / MIN_HZ, t);
     const bin = Math.min(maxBin - 1, Math.max(0, Math.round(freq / binHz)));
     arr[y] = bin;
   }
@@ -485,10 +485,9 @@ function buildRowToBin(h, maxHz, binHz, maxBin) {
 }
 
 function yForFreq(freq, maxHz, h) {
-  const f0 = 20;
-  if (freq <= f0) return h - 1;
+  if (freq <= MIN_HZ) return h - 1;
   if (freq >= maxHz) return 0;
-  const t = Math.log(freq / f0) / Math.log(maxHz / f0);
+  const t = Math.log(freq / MIN_HZ) / Math.log(maxHz / MIN_HZ);
   return (1 - t) * (h - 1);
 }
 
@@ -563,8 +562,7 @@ function midiKeyBoundsY(m, maxHz, h) {
 }
 
 function drawPianoSidebar(ctx, maxHz, w, h, pianoW) {
-  const minHz = 40;
-  const minMidi = Math.max(0, Math.floor(69 + 12 * Math.log2(minHz / A4)));
+  const minMidi = Math.max(0, Math.floor(69 + 12 * Math.log2(MIN_HZ / A4)));
   const maxMidi = Math.min(127, Math.ceil(69 + 12 * Math.log2(maxHz / A4)));
 
   ctx.save();
@@ -622,7 +620,7 @@ function drawPianoSidebar(ctx, maxHz, w, h, pianoW) {
     if (isBlackPc(pc)) continue;
 
     const f = midiToFreq(m);
-    if (f < 20 || f > maxHz) continue;
+    if (f < MIN_HZ || f > maxHz) continue;
 
     const y = yForFreq(f, maxHz, h);
     const ly = clamp(y, 12, h - 12);
@@ -684,7 +682,7 @@ function drawPitchDots(ctx, picks, x, maxHz, h, lin, sampleRate, fftSize) {
 function drawSpectrogramColumn(ctx, lin, sampleRate, fftSize, canvas, picks, maxHz = MAX_HZ, options = {}) {
   const { w, h } = sizeCanvasToDisplay(canvas, ctx);
 
-  const pianoW = Math.min(LABEL_W, Math.max(120, Math.floor(w * 0.16)));
+  const pianoW = Math.min(LABEL_W, Math.max(72, Math.floor(w * 0.08)));
   const plotX0 = pianoW;
   const plotW = Math.max(40, w - plotX0);
 
