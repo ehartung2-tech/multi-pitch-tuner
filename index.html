@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Chord Tuner</title>
-  <link rel="stylesheet" href="style.css?v=20260706-target-deadzone" />
+  <link rel="stylesheet" href="style.css?v=20260706-hover-readout" />
 </head>
 
 <body>
@@ -62,6 +62,10 @@
           </div>
         </div>
         <canvas id="spec"></canvas>
+        <div id="specCursor" class="spec-cursor" hidden>
+          <div class="spec-cursor-line"></div>
+          <div class="spec-cursor-label"></div>
+        </div>
       </section>
 
       <section class="card pitches">
@@ -168,6 +172,6 @@
 
   </main>
 
-  <script src="app.js?v=20260706-target-deadzone"></script>
+  <script src="app.js?v=20260706-hover-readout"></script>
 </body>
 </html>

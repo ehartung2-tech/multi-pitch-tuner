@@ -293,6 +293,10 @@ body{
 
 /* ---------- Spectrogram ---------- */
 
+.bigspec{
+  position:relative;
+}
+
 .bigspec canvas{
   display:block;
   width: 100%;
@@ -300,6 +304,37 @@ body{
   border-radius: 16px;
   border: 1px solid rgba(255,255,255,0.10);
   background: #000;
+}
+
+.spec-cursor{
+  position:fixed;
+  z-index:50;
+  pointer-events:none;
+  --cursor-y:0px;
+}
+
+.spec-cursor-line{
+  position:absolute;
+  left:0;
+  right:0;
+  top:var(--cursor-y);
+  height:1px;
+  background:rgba(255,255,255,0.52);
+  box-shadow:0 0 10px rgba(90,185,255,0.35);
+}
+
+.spec-cursor-label{
+  position:absolute;
+  min-width:142px;
+  padding:6px 9px;
+  border:1px solid rgba(255,255,255,0.18);
+  border-radius:10px;
+  background:rgba(6,8,13,0.88);
+  color:rgba(255,255,255,0.94);
+  font-size:12px;
+  font-variant-numeric:tabular-nums;
+  box-shadow:0 10px 26px rgba(0,0,0,0.35);
+  backdrop-filter:blur(8px);
 }
 
 /* ---------- Detected pitches ---------- */
@@ -978,6 +1013,10 @@ pre{
     min-height:390px;
     max-height:620px;
     border-radius:12px;
+  }
+
+  .spec-cursor{
+    display:none;
   }
 
   .pitch{

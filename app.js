@@ -506,6 +506,11 @@ function yForFreq(freq, maxHz, h) {
   return (1 - t) * (h - 1);
 }
 
+function freqForY(y, maxHz, h) {
+  const t = 1 - clamp(y / Math.max(1, h - 1), 0, 1);
+  return MIN_HZ * Math.pow(maxHz / MIN_HZ, t);
+}
+
 function colorForSpectrogram(v) {
   const x = clamp(v, 0, 1);
 
@@ -1522,11 +1527,57 @@ function setupSpectrogramControls() {
   apply();
 }
 
+function setupSpectrogramCursor() {
+  const canvas = document.getElementById("spec");
+  const cursor = document.getElementById("specCursor");
+  const label = cursor?.querySelector(".spec-cursor-label");
+  if (!canvas || !cursor || !label) return;
+
+  const isDesktopPointer = () =>
+    window.matchMedia?.("(hover: hover) and (pointer: fine)").matches ?? true;
+
+  const hide = () => {
+    cursor.hidden = true;
+  };
+
+  canvas.addEventListener("pointermove", (event) => {
+    if (!isDesktopPointer()) {
+      hide();
+      return;
+    }
+
+    const rect = canvas.getBoundingClientRect();
+    const x = clamp(event.clientX - rect.left, 0, rect.width);
+    const y = clamp(event.clientY - rect.top, 0, rect.height);
+    const freq = freqForY(y, MAX_HZ, rect.height);
+    const note = freqToETNote(freq);
+    const noteText = note ? `${note.name} ${note.cents >= 0 ? "+" : ""}${note.cents.toFixed(0)}c` : "—";
+    const hzText = freq >= 1000 ? `${(freq / 1000).toFixed(2)} kHz` : `${freq.toFixed(1)} Hz`;
+    const labelX = x > rect.width - 170 ? x - 158 : x + 12;
+    const labelY = clamp(y - 18, 8, rect.height - 38);
+
+    cursor.hidden = false;
+    cursor.style.left = `${rect.left + window.scrollX}px`;
+    cursor.style.top = `${rect.top + window.scrollY}px`;
+    cursor.style.width = `${rect.width}px`;
+    cursor.style.height = `${rect.height}px`;
+    cursor.style.setProperty("--cursor-y", `${y}px`);
+    label.style.left = `${labelX}px`;
+    label.style.top = `${labelY}px`;
+    label.textContent = `${noteText} · ${hzText}`;
+  });
+
+  canvas.addEventListener("pointerleave", hide);
+  window.addEventListener("scroll", hide, { passive: true });
+  window.addEventListener("resize", hide);
+}
+
 // wire up
 window.addEventListener("DOMContentLoaded", () => {
   renderPitchCards([]);
   buildPracticeUI();
   setupSpectrogramControls();
+  setupSpectrogramCursor();
   updateRecordingButtons();
 
   document.getElementById("start")?.addEventListener("click", () => {
