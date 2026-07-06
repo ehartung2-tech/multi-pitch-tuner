@@ -756,12 +756,12 @@ function drawSpectrogramColumn(ctx, lin, sampleRate, fftSize, canvas, picks, max
       const freq = bin * binHz;
       const rumbleFade = clamp((freq - 45) / (RUMBLE_HZ * 1.7 - 45), 0.08, 1);
       const aboveFloor = Math.max(0, neighbor - floor);
-      const ridge = Math.max(0, neighbor - Math.max(floor, localAvg * 0.78));
-      const breathAwareSignal = Math.max(aboveFloor * 0.42, ridge * 2.15);
+      const ridge = Math.max(0, neighbor - Math.max(floor, localAvg * 0.68));
+      const breathAwareSignal = Math.max(aboveFloor * 0.58, ridge * 1.45);
       const norm = (breathAwareSignal * rumbleFade) / normDen;
       const clipped = clamp(norm, 0, 1);
-      const boosted = Math.pow(clipped, isQuiet ? 0.68 : 0.38) * (isQuiet ? 0.34 : 1);
-      const mixed = Math.max(boosted, prev * 0.06);
+      const boosted = Math.pow(clipped, isQuiet ? 0.74 : 0.48) * (isQuiet ? 0.38 : 0.92);
+      const mixed = Math.max(boosted, prev * 0.10);
       const { r, g, b } = colorForSpectrogram(mixed);
 
       const idx = (y * w + x) * 4;
@@ -1347,7 +1347,7 @@ async function startMic() {
 
   analyser = micCtx.createAnalyser();
   analyser.fftSize = 8192;
-  analyser.smoothingTimeConstant = 0.42;
+  analyser.smoothingTimeConstant = 0.48;
   src.connect(analyser);
 
   const bins = analyser.frequencyBinCount;
