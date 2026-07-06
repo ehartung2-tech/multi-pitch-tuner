@@ -22,6 +22,7 @@ const CLOSE_CENTS   = 15;
 // Spectrogram parameters
 const MAX_HZ = 4000;
 const LABEL_W = 190; // piano sidebar cap
+let spectrogramSpeed = 0.5;
 
 // Pitch detection parameters
 const DETECT_MIN_HZ = 55;
@@ -428,6 +429,8 @@ let specX = 0;
 let specImg = null;
 let rowToBin = null;
 let rowToBinKey = "";
+let specScrollAccum = 0;
+let specVisualPeak = 1e-9;
 
 function buildRowToBin(h, maxHz, binHz, maxBin) {
   const key = `${h}|${maxHz}|${binHz}|${maxBin}`;
@@ -454,6 +457,44 @@ function yForFreq(freq, maxHz, h) {
   if (freq >= maxHz) return 0;
   const t = Math.log(freq / f0) / Math.log(maxHz / f0);
   return (1 - t) * (h - 1);
+}
+
+function colorForSpectrogram(v) {
+  const x = clamp(v, 0, 1);
+
+  if (x < 0.18) {
+    const t = x / 0.18;
+    return {
+      r: Math.round(0 + 8 * t),
+      g: Math.round(0 + 18 * t),
+      b: Math.round(8 + 42 * t)
+    };
+  }
+
+  if (x < 0.55) {
+    const t = (x - 0.18) / 0.37;
+    return {
+      r: Math.round(8 + 22 * t),
+      g: Math.round(18 + 135 * t),
+      b: Math.round(50 + 205 * t)
+    };
+  }
+
+  if (x < 0.82) {
+    const t = (x - 0.55) / 0.27;
+    return {
+      r: Math.round(30 + 125 * t),
+      g: Math.round(153 + 82 * t),
+      b: Math.round(255 - 15 * t)
+    };
+  }
+
+  const t = (x - 0.82) / 0.18;
+  return {
+    r: Math.round(155 + 100 * t),
+    g: Math.round(235 + 20 * t),
+    b: Math.round(240 - 70 * t)
+  };
 }
 
 function estimateLoudness01(lin, freq, sampleRate, fftSize, maxHz) {
@@ -623,6 +664,8 @@ function drawSpectrogramColumn(ctx, lin, sampleRate, fftSize, canvas, picks, max
       specImg.data[i + 3] = 255;
     }
     specX = 0;
+    specScrollAccum = 0;
+    specVisualPeak = 1e-9;
   }
 
   const binHz = sampleRate / fftSize;
@@ -635,38 +678,52 @@ function drawSpectrogramColumn(ctx, lin, sampleRate, fftSize, canvas, picks, max
   const samples = [];
   for (let i = 0; i < maxBin; i += step) samples.push(lin[i]);
   samples.sort((a,b) => a - b);
-  const p95 = samples[Math.floor(samples.length * 0.95)] || 1e-9;
-  const normDen = Math.max(p95, 1e-9);
+  const p96 = samples[Math.floor(samples.length * 0.96)] || 1e-9;
+  const p995 = samples[Math.floor(samples.length * 0.995)] || p96 || 1e-9;
+  const targetPeak = Math.max(p995, p96 * 2.4, 1e-9);
+  specVisualPeak = Math.max(targetPeak, specVisualPeak * 0.94);
+  const normDen = Math.max(specVisualPeak, 1e-9);
 
-  const x = plotX0 + specX;
+  specScrollAccum += spectrogramSpeed;
+  const columns = Math.floor(specScrollAccum);
+  if (columns < 1) {
+    ctx.putImageData(specImg, 0, 0);
+    drawPianoSidebar(ctx, maxHz, w, h, plotX0);
+    return;
+  }
+  specScrollAccum -= columns;
 
-  for (let y = 0; y < h; y++) {
-    const bin = map[y];
-    const norm = lin[bin] / normDen;
-    const clipped = Math.min(1.0, norm);
-    const boosted = Math.pow(clipped, 0.25);
-    const intensity = Math.max(0, Math.min(255, Math.round(boosted * 255)));
+  for (let c = 0; c < columns; c++) {
+    const x = plotX0 + specX;
 
-    const r = 0;
-    const g = Math.round(intensity * 0.55);
-    const b = intensity;
+    for (let y = 0; y < h; y++) {
+      const bin = map[y];
+      const prev = specImg.data[(y * w + x) * 4 + 2] / 255;
+      const neighbor = bin > 0 ? (lin[bin - 1] + lin[bin] + (lin[bin + 1] || lin[bin])) / 3 : lin[bin];
+      const norm = neighbor / normDen;
+      const clipped = clamp(norm, 0, 1);
+      const boosted = Math.pow(clipped, 0.38);
+      const mixed = Math.max(boosted, prev * 0.08);
+      const { r, g, b } = colorForSpectrogram(mixed);
 
-    const idx = (y * w + x) * 4;
-    specImg.data[idx + 0] = r;
-    specImg.data[idx + 1] = g;
-    specImg.data[idx + 2] = b;
-    specImg.data[idx + 3] = 255;
+      const idx = (y * w + x) * 4;
+      specImg.data[idx + 0] = r;
+      specImg.data[idx + 1] = g;
+      specImg.data[idx + 2] = b;
+      specImg.data[idx + 3] = 255;
+    }
+
+    specX = (specX + 1) % plotW;
   }
 
   ctx.putImageData(specImg, 0, 0);
   drawPianoSidebar(ctx, maxHz, w, h, plotX0);
 
+  const x = plotX0 + ((specX + plotW - 1) % plotW);
   ctx.fillStyle = "rgba(90,185,255,0.20)";
   ctx.fillRect(x, 0, 1, h);
 
   drawPitchDots(ctx, picks, x, maxHz, h, lin, sampleRate, fftSize);
-
-  specX = (specX + 1) % plotW;
 }
 
 /* -----------------------------
@@ -1377,10 +1434,25 @@ function stopMic() {
   if (!wasRecording) updateRecordingButtons();
 }
 
+function setupSpectrogramControls() {
+  const speed = document.getElementById("specSpeed");
+  const label = document.getElementById("specSpeedLabel");
+  if (!speed || !label) return;
+
+  const apply = () => {
+    spectrogramSpeed = clamp(parseFloat(speed.value) || 0.5, 0.25, 1.5);
+    label.textContent = `${spectrogramSpeed.toFixed(2).replace(/\.00$/, "").replace(/0$/, "")}x`;
+  };
+
+  speed.addEventListener("input", apply);
+  apply();
+}
+
 // wire up
 window.addEventListener("DOMContentLoaded", () => {
   renderPitchCards([]);
   buildPracticeUI();
+  setupSpectrogramControls();
   updateRecordingButtons();
 
   document.getElementById("start")?.addEventListener("click", () => {

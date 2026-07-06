@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>multi-pitch tuner</title>
-  <link rel="stylesheet" href="style.css?v=20260706-recording" />
+  <link rel="stylesheet" href="style.css?v=20260706-spectrogram" />
 </head>
 
 <body>
@@ -51,7 +51,14 @@
       <section class="card bigspec">
         <div class="cardhead">
           <h2>Spectrogram</h2>
-          <div class="sub">Time → (wraps). Frequency ↑ (log). Brightness = loudness</div>
+          <div class="spec-tools">
+            <label class="speed-control">
+              <span>Scroll</span>
+              <input id="specSpeed" type="range" min="0.25" max="1.5" step="0.25" value="0.5" />
+              <span id="specSpeedLabel">0.5x</span>
+            </label>
+            <div class="sub">Time → (wraps). Frequency ↑ (log). Brightness = loudness</div>
+          </div>
         </div>
         <canvas id="spec"></canvas>
       </section>
@@ -160,6 +167,6 @@
 
   </main>
 
-  <script src="app.js?v=20260706-recording"></script>
+  <script src="app.js?v=20260706-spectrogram"></script>
 </body>
 </html>
