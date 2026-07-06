@@ -734,13 +734,22 @@ function drawSpectrogramColumn(ctx, lin, sampleRate, fftSize, canvas, picks, max
       const bin = map[y];
       const prev = specImg.data[(y * w + x) * 4 + 2] / 255;
       const neighbor = bin > 0 ? (lin[bin - 1] + lin[bin] + (lin[bin + 1] || lin[bin])) / 3 : lin[bin];
+      const localRadius = Math.max(3, Math.round(bin * 0.018));
+      const lo = Math.max(1, bin - localRadius);
+      const hi = Math.min(maxBin - 1, bin + localRadius);
+      let localAvg = 0;
+      for (let j = lo; j <= hi; j++) localAvg += lin[j];
+      localAvg /= Math.max(1, hi - lo + 1);
+
       const freq = bin * binHz;
       const rumbleFade = clamp((freq - 45) / (RUMBLE_HZ * 1.7 - 45), 0.08, 1);
       const aboveFloor = Math.max(0, neighbor - floor);
-      const norm = (aboveFloor * rumbleFade) / normDen;
+      const ridge = Math.max(0, neighbor - Math.max(floor, localAvg * 0.78));
+      const breathAwareSignal = Math.max(aboveFloor * 0.42, ridge * 2.15);
+      const norm = (breathAwareSignal * rumbleFade) / normDen;
       const clipped = clamp(norm, 0, 1);
-      const boosted = Math.pow(clipped, isQuiet ? 0.62 : 0.42) * (isQuiet ? 0.28 : 1);
-      const mixed = Math.max(boosted, prev * 0.08);
+      const boosted = Math.pow(clipped, isQuiet ? 0.68 : 0.38) * (isQuiet ? 0.34 : 1);
+      const mixed = Math.max(boosted, prev * 0.06);
       const { r, g, b } = colorForSpectrogram(mixed);
 
       const idx = (y * w + x) * 4;
@@ -1312,7 +1321,7 @@ async function startMic() {
 
   analyser = micCtx.createAnalyser();
   analyser.fftSize = 8192;
-  analyser.smoothingTimeConstant = 0.55;
+  analyser.smoothingTimeConstant = 0.42;
   src.connect(analyser);
 
   const bins = analyser.frequencyBinCount;
