@@ -932,7 +932,8 @@ function renderPracticeTargetsList(rows) {
       : `${r.cents >= 0 ? "+" : ""}${r.cents.toFixed(0)}c`;
 
     const cls = r.cls || "";
-    const pos = hasCents ? clamp(((r.cents + 50) / 100) * 100, 0, 100) : 50;
+    const visualCents = hasCents && Math.abs(r.cents) <= 2 ? 0 : r.cents;
+    const pos = hasCents ? clamp(((visualCents + 50) / 100) * 100, 0, 100) : 50;
     const meterCls = hasCents ? cls : "idle";
 
     return `
