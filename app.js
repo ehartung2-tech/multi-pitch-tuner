@@ -1200,7 +1200,7 @@ function createRecordingStream() {
 
   const mixed = new MediaStream();
   for (const track of canvasStream.getVideoTracks()) mixed.addTrack(track);
-  for (const track of stream.getAudioTracks()) mixed.addTrack(track);
+  for (const track of stream.getAudioTracks()) mixed.addTrack(track.clone());
   return mixed;
 }
 
@@ -1284,6 +1284,11 @@ function startSessionRecording() {
       setRecordStatus(`Recording ready · ${type.label}`, "ready");
     } else {
       setRecordStatus("Recording ended with no data", "warn");
+    }
+
+    if (stream) {
+      const status = document.getElementById("status");
+      if (status) status.textContent = "Listening…";
     }
 
     updateRecordingButtons();
