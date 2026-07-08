@@ -23,7 +23,7 @@ const CLOSE_CENTS   = 15;
 const MAX_HZ = 10000;
 const MIN_HZ = 32.703; // C1; keeps the singer-focused view from wasting space on sub-rumble
 const LABEL_W = 96; // piano sidebar cap
-let spectrogramSpeed = 0.5;
+let spectrogramSpeed = 0.25;
 
 // Pitch detection parameters
 const PITCH_ANALYSIS_MAX_HZ = 4000;
@@ -1518,7 +1518,7 @@ function setupSpectrogramControls() {
   if (!speed || !label) return;
 
   const apply = () => {
-    spectrogramSpeed = clamp(parseFloat(speed.value) || 0.5, 0.25, 1.5);
+    spectrogramSpeed = clamp(parseFloat(speed.value) || 0.25, 0.25, 1.5);
     label.textContent = `${spectrogramSpeed.toFixed(2).replace(/\.00$/, "").replace(/0$/, "")}x`;
   };
 
