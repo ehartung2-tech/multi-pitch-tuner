@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Chord Tuner">
+  <rect x="7" y="7" width="50" height="50" rx="16" fill="#111827" stroke="#53607e" stroke-width="4"/>
+  <circle cx="21" cy="34" r="8" fill="#ffd75d"/>
+  <circle cx="32" cy="31" r="8" fill="#7ed36f"/>
+  <circle cx="43" cy="34" r="8" fill="#c8645d"/>
+  <circle cx="21" cy="34" r="11" fill="none" stroke="#2c344b" stroke-width="5"/>
+  <circle cx="32" cy="31" r="11" fill="none" stroke="#2f4458" stroke-width="5"/>
+  <circle cx="43" cy="34" r="11" fill="none" stroke="#44334e" stroke-width="5"/>
+</svg>
