@@ -35,7 +35,7 @@ const MAX_TRACK_AGE = 8;
 const RUMBLE_HZ = 85;
 const VISUAL_FLOOR_MULT = 2.45;
 const VISUAL_IDLE_FLOOR_MULT = 9.5;
-const VISUAL_MIN_REFERENCE = 5.5e-5;
+const VISUAL_MIN_REFERENCE = 3.2e-4;
 
 const RECORDING_TYPES = [
   { mime: "video/mp4;codecs=h264,aac", ext: "mp4", label: "MP4" },
@@ -735,13 +735,16 @@ function drawSpectrogramColumn(ctx, lin, sampleRate, fftSize, canvas, picks, max
   const isQuiet = !!options.quiet || p995 < noise * 5.2;
   const floor = noise * (isQuiet ? VISUAL_IDLE_FLOOR_MULT : VISUAL_FLOOR_MULT);
   const targetPeak = Math.max(p995 - floor, (p96 - floor) * 2.4, 1e-9);
+  const activePeak = isQuiet ? 0 : targetPeak;
   specReferencePeak = Math.max(
-    targetPeak,
-    specReferencePeak * (isQuiet ? 0.985 : 0.97),
+    activePeak,
+    specReferencePeak * (isQuiet ? 0.998 : 0.985),
     VISUAL_MIN_REFERENCE
   );
-  specVisualPeak = Math.max(targetPeak, specVisualPeak * (isQuiet ? 0.96 : 0.94));
+  specVisualPeak = Math.max(activePeak, specVisualPeak * (isQuiet ? 0.995 : 0.96));
   const normDen = Math.max(specReferencePeak, specVisualPeak, VISUAL_MIN_REFERENCE);
+  const framePresence = clamp(targetPeak / normDen, 0, 1);
+  const quietDim = isQuiet ? framePresence * framePresence * 0.55 : 1;
 
   specScrollAccum += spectrogramSpeed;
   const columns = Math.floor(specScrollAccum);
@@ -778,7 +781,7 @@ function drawSpectrogramColumn(ctx, lin, sampleRate, fftSize, canvas, picks, max
         : Math.max(aboveFloor * 0.48, ridge * 1.38);
       const norm = (breathAwareSignal * rumbleFade) / normDen;
       const clipped = clamp(norm, 0, 1);
-      const boosted = Math.pow(clipped, isQuiet ? 1.4 : 0.54) * (isQuiet ? 0.035 : 0.82);
+      const boosted = Math.pow(clipped, isQuiet ? 1.65 : 0.62) * (isQuiet ? quietDim : 0.78);
       const onset = isQuiet ? 0 : clamp((boosted - specPrevVisualProfile[y] * 1.04) * 3.4, 0, 1);
       const mixed = Math.max(boosted, prev * 0.10);
       const base = colorForSpectrogram(mixed);
