@@ -24,6 +24,7 @@ const MAX_HZ = 10000;
 const MIN_HZ = 32.703; // C1; keeps the singer-focused view from wasting space on sub-rumble
 const LABEL_W = 96; // piano sidebar cap
 let spectrogramSpeed = 0.25;
+let spectrogramSensitivityDb = 8;
 
 // Pitch detection parameters
 const PITCH_ANALYSIS_MAX_HZ = 4000;
@@ -33,10 +34,10 @@ const CAND_STEP_CENTS = 8;
 const MIN_PICK_SEMITONES = 0.55;
 const MAX_TRACK_AGE = 8;
 const RUMBLE_HZ = 85;
-const VISUAL_DB_MIN = -76;
-const VISUAL_DB_MAX = -8;
-const VISUAL_DB_NOISE_MARGIN = 9;
-const VISUAL_DB_IDLE_MARGIN = 18;
+const VISUAL_DB_MIN = -78;
+const VISUAL_DB_MAX = -34;
+const VISUAL_DB_NOISE_MARGIN = 10;
+const VISUAL_DB_IDLE_MARGIN = 20;
 
 const RECORDING_TYPES = [
   { mime: "video/mp4;codecs=h264,aac", ext: "mp4", label: "MP4" },
@@ -517,8 +518,8 @@ function freqForY(y, maxHz, h) {
 function colorForSpectrogram(v) {
   const x = clamp(v, 0, 1);
 
-  if (x < 0.18) {
-    const t = x / 0.18;
+  if (x < 0.14) {
+    const t = x / 0.14;
     return {
       r: Math.round(0 + 8 * t),
       g: Math.round(0 + 18 * t),
@@ -526,8 +527,8 @@ function colorForSpectrogram(v) {
     };
   }
 
-  if (x < 0.55) {
-    const t = (x - 0.18) / 0.37;
+  if (x < 0.46) {
+    const t = (x - 0.14) / 0.32;
     return {
       r: Math.round(8 + 22 * t),
       g: Math.round(18 + 135 * t),
@@ -535,8 +536,8 @@ function colorForSpectrogram(v) {
     };
   }
 
-  if (x < 0.82) {
-    const t = (x - 0.55) / 0.27;
+  if (x < 0.72) {
+    const t = (x - 0.46) / 0.26;
     return {
       r: Math.round(30 + 125 * t),
       g: Math.round(153 + 82 * t),
@@ -544,7 +545,7 @@ function colorForSpectrogram(v) {
     };
   }
 
-  const t = (x - 0.82) / 0.18;
+  const t = (x - 0.72) / 0.28;
   return {
     r: Math.round(170 + 85 * t),
     g: Math.round(230 - 95 * t),
@@ -732,11 +733,14 @@ function drawSpectrogramColumn(ctx, lin, sampleRate, fftSize, canvas, picks, max
   const p995 = samples[Math.floor(samples.length * 0.995)] || p96 || noise;
   const isQuiet = !!options.quiet || p995 < noise * 5.2;
   const noiseDb = ampToDb(noise);
+  const sensitivityDb = options.sensitivityDb ?? spectrogramSensitivityDb;
+  const displayMinDb = VISUAL_DB_MIN - sensitivityDb * 0.45;
+  const displayMaxDb = VISUAL_DB_MAX - sensitivityDb;
   const visualFloorDb = Math.max(
-    VISUAL_DB_MIN,
+    displayMinDb,
     noiseDb + (isQuiet ? VISUAL_DB_IDLE_MARGIN : VISUAL_DB_NOISE_MARGIN)
   );
-  const visualRangeDb = Math.max(12, VISUAL_DB_MAX - visualFloorDb);
+  const visualRangeDb = Math.max(10, displayMaxDb - visualFloorDb);
 
   specScrollAccum += spectrogramSpeed;
   const columns = Math.floor(specScrollAccum);
@@ -770,7 +774,7 @@ function drawSpectrogramColumn(ctx, lin, sampleRate, fftSize, canvas, picks, max
       const ridgeDb = signalDb - localDb;
       const ridgeGate = clamp((ridgeDb - (isQuiet ? 8.5 : 2.5)) / 13, 0, 1);
       const loudness = clamp((signalDb - visualFloorDb) / visualRangeDb, 0, 1);
-      const boosted = Math.pow(loudness, 1.05) * ridgeGate * rumbleFade;
+      const boosted = clamp(Math.pow(loudness, 0.78) * ridgeGate * rumbleFade * 1.14, 0, 1);
       const onset = isQuiet ? 0 : clamp((boosted - specPrevVisualProfile[y] * 1.04) * 3.4, 0, 1);
       const mixed = Math.max(boosted, prev * 0.10);
       const base = colorForSpectrogram(mixed);
@@ -1470,7 +1474,8 @@ async function startMic() {
 
     drawSpectrogramColumn(ctx, lin, micCtx.sampleRate, analyser.fftSize, canvas, picks, MAX_HZ, {
       quiet: quietFrames > 2,
-      db
+      db,
+      sensitivityDb: spectrogramSensitivityDb
     });
     rafId = requestAnimationFrame(loop);
   }
@@ -1519,16 +1524,26 @@ function stopMic() {
 
 function setupSpectrogramControls() {
   const speed = document.getElementById("specSpeed");
-  const label = document.getElementById("specSpeedLabel");
+  const speedLabel = document.getElementById("specSpeedLabel");
+  const sensitivity = document.getElementById("specSensitivity");
+  const sensitivityLabel = document.getElementById("specSensitivityLabel");
   const clear = document.getElementById("clearSpec");
-  if (!speed || !label) return;
+  if (!speed || !speedLabel) return;
 
-  const apply = () => {
+  const applySpeed = () => {
     spectrogramSpeed = clamp(parseFloat(speed.value) || 0.25, 0.25, 1.5);
-    label.textContent = `${spectrogramSpeed.toFixed(2).replace(/\.00$/, "").replace(/0$/, "")}x`;
+    speedLabel.textContent = `${spectrogramSpeed.toFixed(2).replace(/\.00$/, "").replace(/0$/, "")}x`;
   };
 
-  speed.addEventListener("input", apply);
+  const applySensitivity = () => {
+    if (!sensitivity || !sensitivityLabel) return;
+    spectrogramSensitivityDb = clamp(parseFloat(sensitivity.value) || 0, -12, 18);
+    const sign = spectrogramSensitivityDb > 0 ? "+" : "";
+    sensitivityLabel.textContent = `${sign}${spectrogramSensitivityDb.toFixed(0)} dB`;
+  };
+
+  speed.addEventListener("input", applySpeed);
+  sensitivity?.addEventListener("input", applySensitivity);
   clear?.addEventListener("click", () => {
     resetSpectrogramImage();
 
@@ -1541,7 +1556,8 @@ function setupSpectrogramControls() {
     ctx.putImageData(specImg, 0, 0);
     drawPianoSidebar(ctx, MAX_HZ, w, h, pianoW);
   });
-  apply();
+  applySpeed();
+  applySensitivity();
 }
 
 function setupSpectrogramCursor() {
