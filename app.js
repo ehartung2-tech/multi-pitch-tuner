@@ -33,8 +33,9 @@ const CAND_STEP_CENTS = 8;
 const MIN_PICK_SEMITONES = 0.55;
 const MAX_TRACK_AGE = 8;
 const RUMBLE_HZ = 85;
-const VISUAL_FLOOR_MULT = 2.15;
-const VISUAL_IDLE_FLOOR_MULT = 4.8;
+const VISUAL_FLOOR_MULT = 2.45;
+const VISUAL_IDLE_FLOOR_MULT = 9.5;
+const VISUAL_MIN_REFERENCE = 5.5e-5;
 
 const RECORDING_TYPES = [
   { mime: "video/mp4;codecs=h264,aac", ext: "mp4", label: "MP4" },
@@ -737,10 +738,10 @@ function drawSpectrogramColumn(ctx, lin, sampleRate, fftSize, canvas, picks, max
   specReferencePeak = Math.max(
     targetPeak,
     specReferencePeak * (isQuiet ? 0.985 : 0.97),
-    2.2e-5
+    VISUAL_MIN_REFERENCE
   );
   specVisualPeak = Math.max(targetPeak, specVisualPeak * (isQuiet ? 0.96 : 0.94));
-  const normDen = Math.max(specReferencePeak, specVisualPeak, 2.2e-5);
+  const normDen = Math.max(specReferencePeak, specVisualPeak, VISUAL_MIN_REFERENCE);
 
   specScrollAccum += spectrogramSpeed;
   const columns = Math.floor(specScrollAccum);
@@ -767,12 +768,17 @@ function drawSpectrogramColumn(ctx, lin, sampleRate, fftSize, canvas, picks, max
 
       const freq = bin * binHz;
       const rumbleFade = clamp((freq - 45) / (RUMBLE_HZ * 1.7 - 45), 0.08, 1);
+      const localGate = isQuiet
+        ? Math.max(floor, localAvg * 1.65, noise * 10)
+        : Math.max(floor, localAvg * 0.92);
       const aboveFloor = Math.max(0, neighbor - floor);
-      const ridge = Math.max(0, neighbor - Math.max(floor, localAvg * 0.68));
-      const breathAwareSignal = Math.max(aboveFloor * 0.58, ridge * 1.45);
+      const ridge = Math.max(0, neighbor - localGate);
+      const breathAwareSignal = isQuiet
+        ? ridge * 0.35
+        : Math.max(aboveFloor * 0.48, ridge * 1.38);
       const norm = (breathAwareSignal * rumbleFade) / normDen;
       const clipped = clamp(norm, 0, 1);
-      const boosted = Math.pow(clipped, isQuiet ? 0.84 : 0.50) * (isQuiet ? 0.20 : 0.88);
+      const boosted = Math.pow(clipped, isQuiet ? 1.4 : 0.54) * (isQuiet ? 0.035 : 0.82);
       const onset = isQuiet ? 0 : clamp((boosted - specPrevVisualProfile[y] * 1.04) * 3.4, 0, 1);
       const mixed = Math.max(boosted, prev * 0.10);
       const base = colorForSpectrogram(mixed);
