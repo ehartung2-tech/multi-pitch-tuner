@@ -469,6 +469,7 @@ let rowToBin = null;
 let rowToBinKey = "";
 let specScrollAccum = 0;
 let specPrevVisualProfile = null;
+let specColumnProfile = null;
 
 function resetSpectrogramImage() {
   if (!specImg) return;
@@ -483,6 +484,7 @@ function resetSpectrogramImage() {
   specX = 0;
   specScrollAccum = 0;
   specPrevVisualProfile = null;
+  specColumnProfile = null;
 }
 
 function buildRowToBin(h, maxHz, binHz, maxBin) {
@@ -721,6 +723,9 @@ function drawSpectrogramColumn(ctx, lin, sampleRate, fftSize, canvas, picks, max
   if (!specPrevVisualProfile || specPrevVisualProfile.length !== h) {
     specPrevVisualProfile = new Float32Array(h);
   }
+  if (!specColumnProfile || specColumnProfile.length !== h) {
+    specColumnProfile = new Float32Array(h);
+  }
 
   const db = options.db || null;
   const sampleN = 256;
@@ -756,7 +761,6 @@ function drawSpectrogramColumn(ctx, lin, sampleRate, fftSize, canvas, picks, max
 
     for (let y = 0; y < h; y++) {
       const bin = map[y];
-      const prev = specImg.data[(y * w + x) * 4 + 2] / 255;
       const neighbor = bin > 0 ? (lin[bin - 1] + lin[bin] + (lin[bin + 1] || lin[bin])) / 3 : lin[bin];
       const signalDb = db
         ? ((db[Math.max(0, bin - 1)] + db[bin] + (db[bin + 1] || db[bin])) / 3)
@@ -775,8 +779,17 @@ function drawSpectrogramColumn(ctx, lin, sampleRate, fftSize, canvas, picks, max
       const ridgeGate = clamp((ridgeDb - (isQuiet ? 8.5 : 2.5)) / 13, 0, 1);
       const loudness = clamp((signalDb - visualFloorDb) / visualRangeDb, 0, 1);
       const boosted = clamp(Math.pow(loudness, 0.62) * ridgeGate * rumbleFade * 1.55, 0, 1);
+      specColumnProfile[y] = boosted;
+    }
+
+    for (let y = 0; y < h; y++) {
+      const prev = specImg.data[(y * w + x) * 4 + 2] / 255;
+      const above = specColumnProfile[Math.max(0, y - 1)];
+      const center = specColumnProfile[y];
+      const below = specColumnProfile[Math.min(h - 1, y + 1)];
+      const boosted = center * 0.68 + (above + below) * 0.16;
       const onset = isQuiet ? 0 : clamp((boosted - specPrevVisualProfile[y] * 1.04) * 3.4, 0, 1);
-      const mixed = Math.max(boosted, prev * 0.10);
+      const mixed = Math.max(boosted * 0.88 + prev * 0.12, prev * 0.08);
       const base = colorForSpectrogram(mixed);
       const glow = onset * onset * 0.58;
       const r = Math.round(base.r + (255 - base.r) * glow);
