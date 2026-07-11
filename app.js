@@ -24,7 +24,7 @@ const MAX_HZ = 10000;
 const MIN_HZ = 32.703; // C1; keeps the singer-focused view from wasting space on sub-rumble
 const LABEL_W = 96; // piano sidebar cap
 let spectrogramSpeed = 0.25;
-let spectrogramSensitivityDb = 8;
+let spectrogramSensitivityDb = 16;
 
 // Pitch detection parameters
 const PITCH_ANALYSIS_MAX_HZ = 4000;
@@ -734,7 +734,7 @@ function drawSpectrogramColumn(ctx, lin, sampleRate, fftSize, canvas, picks, max
   const isQuiet = !!options.quiet || p995 < noise * 5.2;
   const noiseDb = ampToDb(noise);
   const sensitivityDb = options.sensitivityDb ?? spectrogramSensitivityDb;
-  const displayMinDb = VISUAL_DB_MIN - sensitivityDb * 0.45;
+  const displayMinDb = VISUAL_DB_MIN - sensitivityDb * 0.35;
   const displayMaxDb = VISUAL_DB_MAX - sensitivityDb;
   const visualFloorDb = Math.max(
     displayMinDb,
@@ -774,7 +774,7 @@ function drawSpectrogramColumn(ctx, lin, sampleRate, fftSize, canvas, picks, max
       const ridgeDb = signalDb - localDb;
       const ridgeGate = clamp((ridgeDb - (isQuiet ? 8.5 : 2.5)) / 13, 0, 1);
       const loudness = clamp((signalDb - visualFloorDb) / visualRangeDb, 0, 1);
-      const boosted = clamp(Math.pow(loudness, 0.78) * ridgeGate * rumbleFade * 1.14, 0, 1);
+      const boosted = clamp(Math.pow(loudness, 0.62) * ridgeGate * rumbleFade * 1.55, 0, 1);
       const onset = isQuiet ? 0 : clamp((boosted - specPrevVisualProfile[y] * 1.04) * 3.4, 0, 1);
       const mixed = Math.max(boosted, prev * 0.10);
       const base = colorForSpectrogram(mixed);
@@ -1537,7 +1537,7 @@ function setupSpectrogramControls() {
 
   const applySensitivity = () => {
     if (!sensitivity || !sensitivityLabel) return;
-    spectrogramSensitivityDb = clamp(parseFloat(sensitivity.value) || 0, -12, 18);
+    spectrogramSensitivityDb = clamp(parseFloat(sensitivity.value) || 0, -12, 30);
     const sign = spectrogramSensitivityDb > 0 ? "+" : "";
     sensitivityLabel.textContent = `${sign}${spectrogramSensitivityDb.toFixed(0)} dB`;
   };
