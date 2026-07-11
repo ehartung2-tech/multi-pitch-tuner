@@ -33,9 +33,10 @@ const CAND_STEP_CENTS = 8;
 const MIN_PICK_SEMITONES = 0.55;
 const MAX_TRACK_AGE = 8;
 const RUMBLE_HZ = 85;
-const VISUAL_FLOOR_MULT = 2.45;
-const VISUAL_IDLE_FLOOR_MULT = 9.5;
-const VISUAL_MIN_REFERENCE = 3.2e-4;
+const VISUAL_DB_MIN = -82;
+const VISUAL_DB_MAX = -18;
+const VISUAL_DB_NOISE_MARGIN = 7;
+const VISUAL_DB_IDLE_MARGIN = 16;
 
 const RECORDING_TYPES = [
   { mime: "video/mp4;codecs=h264,aac", ext: "mp4", label: "MP4" },
@@ -48,6 +49,7 @@ const RECORDING_TYPES = [
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 function centsBetween(freq, target) { return 1200 * Math.log2(freq / target); }
 function absCents(note) { return Math.abs(note?.cents ?? 999); }
+function ampToDb(v) { return 20 * Math.log10(Math.max(v, 1e-8)); }
 
 function percentile(values, p) {
   if (!values || values.length === 0) return 0;
@@ -465,8 +467,6 @@ let specImg = null;
 let rowToBin = null;
 let rowToBinKey = "";
 let specScrollAccum = 0;
-let specVisualPeak = 1e-9;
-let specReferencePeak = 1e-7;
 let specPrevVisualProfile = null;
 
 function resetSpectrogramImage() {
@@ -481,8 +481,6 @@ function resetSpectrogramImage() {
 
   specX = 0;
   specScrollAccum = 0;
-  specVisualPeak = 1e-9;
-  specReferencePeak = 1e-7;
   specPrevVisualProfile = null;
 }
 
@@ -556,7 +554,7 @@ function colorForSpectrogram(v) {
 
 function estimateLoudness01(lin, freq, sampleRate, fftSize, maxHz) {
   const binHz = sampleRate / fftSize;
-  const maxBin = Math.min(lin.length, Math.floor(maxHz / binHz));
+  const maxBin = Math.min(lin.length - 1, Math.floor(maxHz / binHz));
   const center = Math.round(freq / binHz);
 
   let sum = 0, count = 0;
@@ -723,7 +721,7 @@ function drawSpectrogramColumn(ctx, lin, sampleRate, fftSize, canvas, picks, max
     specPrevVisualProfile = new Float32Array(h);
   }
 
-  // percentile normalization
+  const db = options.db || null;
   const sampleN = 256;
   const step = Math.max(1, Math.floor(maxBin / sampleN));
   const samples = [];
@@ -733,18 +731,12 @@ function drawSpectrogramColumn(ctx, lin, sampleRate, fftSize, canvas, picks, max
   const p96 = samples[Math.floor(samples.length * 0.96)] || noise;
   const p995 = samples[Math.floor(samples.length * 0.995)] || p96 || noise;
   const isQuiet = !!options.quiet || p995 < noise * 5.2;
-  const floor = noise * (isQuiet ? VISUAL_IDLE_FLOOR_MULT : VISUAL_FLOOR_MULT);
-  const targetPeak = Math.max(p995 - floor, (p96 - floor) * 2.4, 1e-9);
-  const activePeak = isQuiet ? 0 : targetPeak;
-  specReferencePeak = Math.max(
-    activePeak,
-    specReferencePeak * (isQuiet ? 0.998 : 0.985),
-    VISUAL_MIN_REFERENCE
+  const noiseDb = ampToDb(noise);
+  const visualFloorDb = Math.max(
+    VISUAL_DB_MIN,
+    noiseDb + (isQuiet ? VISUAL_DB_IDLE_MARGIN : VISUAL_DB_NOISE_MARGIN)
   );
-  specVisualPeak = Math.max(activePeak, specVisualPeak * (isQuiet ? 0.995 : 0.96));
-  const normDen = Math.max(specReferencePeak, specVisualPeak, VISUAL_MIN_REFERENCE);
-  const framePresence = clamp(targetPeak / normDen, 0, 1);
-  const inputDim = isQuiet ? framePresence * framePresence : 1;
+  const visualRangeDb = Math.max(12, VISUAL_DB_MAX - visualFloorDb);
 
   specScrollAccum += spectrogramSpeed;
   const columns = Math.floor(specScrollAccum);
@@ -762,6 +754,9 @@ function drawSpectrogramColumn(ctx, lin, sampleRate, fftSize, canvas, picks, max
       const bin = map[y];
       const prev = specImg.data[(y * w + x) * 4 + 2] / 255;
       const neighbor = bin > 0 ? (lin[bin - 1] + lin[bin] + (lin[bin + 1] || lin[bin])) / 3 : lin[bin];
+      const signalDb = db
+        ? ((db[Math.max(0, bin - 1)] + db[bin] + (db[bin + 1] || db[bin])) / 3)
+        : ampToDb(neighbor);
       const localRadius = Math.max(3, Math.round(bin * 0.018));
       const lo = Math.max(1, bin - localRadius);
       const hi = Math.min(maxBin - 1, bin + localRadius);
@@ -771,14 +766,11 @@ function drawSpectrogramColumn(ctx, lin, sampleRate, fftSize, canvas, picks, max
 
       const freq = bin * binHz;
       const rumbleFade = clamp((freq - 45) / (RUMBLE_HZ * 1.7 - 45), 0.08, 1);
-      const localGate = isQuiet
-        ? Math.max(floor, localAvg * 1.65, noise * 10)
-        : Math.max(floor, localAvg * 0.92);
-      const ridge = Math.max(0, neighbor - localGate);
-      const breathAwareSignal = ridge * 1.22;
-      const norm = (breathAwareSignal * rumbleFade) / normDen;
-      const clipped = clamp(norm, 0, 1);
-      const boosted = Math.pow(clipped, 0.72) * 0.86 * inputDim;
+      const localDb = ampToDb(localAvg);
+      const ridgeDb = signalDb - localDb;
+      const ridgeGate = clamp((ridgeDb - (isQuiet ? 9 : 3.5)) / 14, 0, 1);
+      const loudness = clamp((signalDb - visualFloorDb) / visualRangeDb, 0, 1);
+      const boosted = Math.pow(loudness, 1.12) * ridgeGate * rumbleFade;
       const onset = isQuiet ? 0 : clamp((boosted - specPrevVisualProfile[y] * 1.04) * 3.4, 0, 1);
       const mixed = Math.max(boosted, prev * 0.10);
       const base = colorForSpectrogram(mixed);
@@ -1477,7 +1469,8 @@ async function startMic() {
     }
 
     drawSpectrogramColumn(ctx, lin, micCtx.sampleRate, analyser.fftSize, canvas, picks, MAX_HZ, {
-      quiet: quietFrames > 2
+      quiet: quietFrames > 2,
+      db
     });
     rafId = requestAnimationFrame(loop);
   }
