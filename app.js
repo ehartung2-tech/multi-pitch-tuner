@@ -24,7 +24,7 @@ const MAX_HZ = 10000;
 const MIN_HZ = 32.703; // C1; keeps the singer-focused view from wasting space on sub-rumble
 const LABEL_W = 96; // piano sidebar cap
 let spectrogramSpeed = 0.25;
-let spectrogramSensitivityDb = 16;
+let spectrogramSensitivityDb = 30;
 
 // Pitch detection parameters
 const PITCH_ANALYSIS_MAX_HZ = 4000;
@@ -778,7 +778,7 @@ function drawSpectrogramColumn(ctx, lin, sampleRate, fftSize, canvas, picks, max
       const ridgeDb = signalDb - localDb;
       const ridgeGate = clamp((ridgeDb - (isQuiet ? 8.5 : 2.5)) / 13, 0, 1);
       const loudness = clamp((signalDb - visualFloorDb) / visualRangeDb, 0, 1);
-      const boosted = clamp(Math.pow(loudness, 0.62) * ridgeGate * rumbleFade * 1.55, 0, 1);
+      const boosted = clamp(Math.pow(loudness, 0.38) * ridgeGate * rumbleFade * 4.8, 0, 1);
       specColumnProfile[y] = boosted;
     }
 
@@ -1550,7 +1550,7 @@ function setupSpectrogramControls() {
 
   const applySensitivity = () => {
     if (!sensitivity || !sensitivityLabel) return;
-    spectrogramSensitivityDb = clamp(parseFloat(sensitivity.value) || 0, -12, 30);
+    spectrogramSensitivityDb = clamp(parseFloat(sensitivity.value) || 0, -12, 60);
     const sign = spectrogramSensitivityDb > 0 ? "+" : "";
     sensitivityLabel.textContent = `${sign}${spectrogramSensitivityDb.toFixed(0)} dB`;
   };
