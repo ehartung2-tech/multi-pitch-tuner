@@ -465,6 +465,7 @@ let rowToBin = null;
 let rowToBinKey = "";
 let specScrollAccum = 0;
 let specVisualPeak = 1e-9;
+let specReferencePeak = 1e-7;
 let specPrevVisualProfile = null;
 
 function resetSpectrogramImage() {
@@ -480,6 +481,7 @@ function resetSpectrogramImage() {
   specX = 0;
   specScrollAccum = 0;
   specVisualPeak = 1e-9;
+  specReferencePeak = 1e-7;
   specPrevVisualProfile = null;
 }
 
@@ -732,8 +734,13 @@ function drawSpectrogramColumn(ctx, lin, sampleRate, fftSize, canvas, picks, max
   const isQuiet = !!options.quiet || p995 < noise * 5.2;
   const floor = noise * (isQuiet ? VISUAL_IDLE_FLOOR_MULT : VISUAL_FLOOR_MULT);
   const targetPeak = Math.max(p995 - floor, (p96 - floor) * 2.4, 1e-9);
-  specVisualPeak = Math.max(targetPeak, specVisualPeak * (isQuiet ? 0.88 : 0.94));
-  const normDen = Math.max(specVisualPeak, 1e-9);
+  specReferencePeak = Math.max(
+    targetPeak,
+    specReferencePeak * (isQuiet ? 0.985 : 0.97),
+    2.2e-5
+  );
+  specVisualPeak = Math.max(targetPeak, specVisualPeak * (isQuiet ? 0.96 : 0.94));
+  const normDen = Math.max(specReferencePeak, specVisualPeak, 2.2e-5);
 
   specScrollAccum += spectrogramSpeed;
   const columns = Math.floor(specScrollAccum);
@@ -765,7 +772,7 @@ function drawSpectrogramColumn(ctx, lin, sampleRate, fftSize, canvas, picks, max
       const breathAwareSignal = Math.max(aboveFloor * 0.58, ridge * 1.45);
       const norm = (breathAwareSignal * rumbleFade) / normDen;
       const clipped = clamp(norm, 0, 1);
-      const boosted = Math.pow(clipped, isQuiet ? 0.74 : 0.48) * (isQuiet ? 0.38 : 0.92);
+      const boosted = Math.pow(clipped, isQuiet ? 0.84 : 0.50) * (isQuiet ? 0.20 : 0.88);
       const onset = isQuiet ? 0 : clamp((boosted - specPrevVisualProfile[y] * 1.04) * 3.4, 0, 1);
       const mixed = Math.max(boosted, prev * 0.10);
       const base = colorForSpectrogram(mixed);
