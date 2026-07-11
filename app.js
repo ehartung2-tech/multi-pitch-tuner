@@ -33,7 +33,9 @@ const DETECT_MAX_HZ = 1400;
 const CAND_STEP_CENTS = 8;
 const MIN_PICK_SEMITONES = 0.55;
 const MAX_TRACK_AGE = 8;
-const RUMBLE_HZ = 85;
+const RUMBLE_HZ = 58;
+const VISUAL_RUMBLE_FADE_START_HZ = 44;
+const VISUAL_RUMBLE_FULL_HZ = 64;
 const VISUAL_DB_MIN = -78;
 const VISUAL_DB_MAX = -34;
 const VISUAL_DB_NOISE_MARGIN = 10;
@@ -773,7 +775,11 @@ function drawSpectrogramColumn(ctx, lin, sampleRate, fftSize, canvas, picks, max
       localAvg /= Math.max(1, hi - lo + 1);
 
       const freq = bin * binHz;
-      const rumbleFade = clamp((freq - 45) / (RUMBLE_HZ * 1.7 - 45), 0.08, 1);
+      const rumbleFade = clamp(
+        (freq - VISUAL_RUMBLE_FADE_START_HZ) / (VISUAL_RUMBLE_FULL_HZ - VISUAL_RUMBLE_FADE_START_HZ),
+        0.10,
+        1
+      );
       const localDb = ampToDb(localAvg);
       const ridgeDb = signalDb - localDb;
       const ridgeGate = clamp((ridgeDb - (isQuiet ? 8.5 : 2.5)) / 13, 0, 1);
