@@ -33,10 +33,10 @@ const CAND_STEP_CENTS = 8;
 const MIN_PICK_SEMITONES = 0.55;
 const MAX_TRACK_AGE = 8;
 const RUMBLE_HZ = 85;
-const VISUAL_DB_MIN = -82;
-const VISUAL_DB_MAX = -18;
-const VISUAL_DB_NOISE_MARGIN = 7;
-const VISUAL_DB_IDLE_MARGIN = 16;
+const VISUAL_DB_MIN = -76;
+const VISUAL_DB_MAX = -8;
+const VISUAL_DB_NOISE_MARGIN = 9;
+const VISUAL_DB_IDLE_MARGIN = 18;
 
 const RECORDING_TYPES = [
   { mime: "video/mp4;codecs=h264,aac", ext: "mp4", label: "MP4" },
@@ -546,9 +546,9 @@ function colorForSpectrogram(v) {
 
   const t = (x - 0.82) / 0.18;
   return {
-    r: Math.round(155 + 100 * t),
-    g: Math.round(235 + 20 * t),
-    b: Math.round(240 - 70 * t)
+    r: Math.round(170 + 85 * t),
+    g: Math.round(230 - 95 * t),
+    b: Math.round(170 - 150 * t)
   };
 }
 
@@ -768,9 +768,9 @@ function drawSpectrogramColumn(ctx, lin, sampleRate, fftSize, canvas, picks, max
       const rumbleFade = clamp((freq - 45) / (RUMBLE_HZ * 1.7 - 45), 0.08, 1);
       const localDb = ampToDb(localAvg);
       const ridgeDb = signalDb - localDb;
-      const ridgeGate = clamp((ridgeDb - (isQuiet ? 9 : 3.5)) / 14, 0, 1);
+      const ridgeGate = clamp((ridgeDb - (isQuiet ? 8.5 : 2.5)) / 13, 0, 1);
       const loudness = clamp((signalDb - visualFloorDb) / visualRangeDb, 0, 1);
-      const boosted = Math.pow(loudness, 1.12) * ridgeGate * rumbleFade;
+      const boosted = Math.pow(loudness, 1.05) * ridgeGate * rumbleFade;
       const onset = isQuiet ? 0 : clamp((boosted - specPrevVisualProfile[y] * 1.04) * 3.4, 0, 1);
       const mixed = Math.max(boosted, prev * 0.10);
       const base = colorForSpectrogram(mixed);
